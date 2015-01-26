@@ -572,9 +572,9 @@ int main(int argc,char **argv) {
     // scale b1 by maximum modulus
     int max_modulus_index;
     stat = cublasIzamax(handle, b1.t, b1.d, b1.s, &max_modulus_index);
-    const double max_modulus = cuCabs(b1_cpu[max_modulus_index]);
+/*    const double max_modulus = cuCabs(b1_cpu[max_modulus_index]);
     stat = cublasZdscal(handle, b1.t, &max_modulus, b1.d, b1.s);
-/*
+
     // for ch=1:nc,kdata(:,:,ch)=kdata(:,:,ch).*sqrt(w);endc
     // i.e. multiply each of the 12 slices of kdata element-wise by sqrt(w)
     dim3 numBlocks(nx, ntviews);
