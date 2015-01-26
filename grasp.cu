@@ -53,9 +53,9 @@
 #include <cuComplex.h> // CUDA complex numbers and operations
 
 // Macros to convert multidimensional indices to 1 dimensional row major index
-#define I2D(i,j,j_tot) = (i*j_tot) + j
-#define I3D(i,j,k,i_tot,j_tot) = (i*j_tot) + j + (k*i_tot*j_tot)
-#define I4D(i,j,k,l,i_tot,j_tot,k_tot) = (i*j_tot) + j + (k*i_tot*j_tot) + (l*i_tot*j_tot*k_tot)
+#define I2D(i,j,j_tot) ((i*j_tot) + j)
+#define I3D(i,j,k,i_tot,j_tot) ((i*j_tot) + j + (k*i_tot*j_tot))
+#define I4D(i,j,k,l,i_tot,j_tot,k_tot) ((i*j_tot) + j + (k*i_tot*j_tot) + (l*i_tot*j_tot*k_tot))
 
 // matrix types
 struct mat2D {
@@ -466,6 +466,57 @@ __global__ void elementWiseMultBySqrt(cuDoubleComplex* kdata, double* w) {
     kdata[i] = cuCmul(kdata[i], sqrtofelement); // WARNING
 }
 
+void print2Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int frow, int fcol)
+{
+	double real_part;
+	double imag_part;
+	int i, j;
+	mat2D *matR;
+	mat2DC *matC;
+
+	if(iscomplex) {
+		matC = (mat2DC*) matrix;
+		for(i = srow; i < frow; i++)
+			for(j = scol; j < fcol; j++) {
+				real_part = cuCreal(matC->d[I2D(i, j, matC->y)]);
+				imag_part = cuCimag(matC->d[I2D(i, j, matC->y)]);
+				printf("%f + i*%f ", real_part, imag_part);
+			}
+				
+	} else {
+		matR = (mat2D*) matrix;
+		for(i = srow; i < frow; i++)
+			for(j = scol; j < fcol; j++)
+				printf("%f ", matR->d[I2D(i, j, matR->y)]);
+	}
+}
+
+/*
+void print3Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int sslice, int frow, int fcol, int fslice)
+{
+	double real_part;
+	double imag_part;
+	int i, j;
+	mat2D *matR;
+	mat2DC *matC;
+
+	if(iscomplex) {
+		matC = (mat2DC*) matrix;
+		for(i = tlrow; i < brrow; i++)
+			for(j = tlcol; j < brcol; j++) {
+				real_part = cuCreal(matC->d[I2D(i, j, matC->y)]);
+				imag_part = cuCimag(matC->d[I2D(i, j, matC->y)]);
+				printf("%f + i*%f ", real_part, imag_part);
+			}
+				
+	} else {
+		matR = (mat2D*) matrix;
+		for(i = tlrow; i < brrow; i++)
+			for(j = tlcol; j < brcol; j++)
+				printf("%f ", matR->d[I2D(i, j, matR->y)]);
+	}
+}
+*/
 
 int main(int argc,char **argv) {
     // Data size (determines gpu optimization, so don't change lightly!)
