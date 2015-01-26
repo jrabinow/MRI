@@ -269,7 +269,7 @@ __global__ void L1HelperKernel(cuDoubleComplex * in, double * out, double l1Smoo
 }
 
 // x and dx are 384x384x28 complex double matrices
-void objective(cuDoubleComplex * x, cuDoubleComplex * dx, double t) {
+double objective(cuDoubleComplex * x, cuDoubleComplex * dx, double t) {
     //function res = objective(x,dx,t,param) %**********************************
 
     // %%%%% L2-norm part
@@ -308,7 +308,7 @@ void objective(cuDoubleComplex * x, cuDoubleComplex * dx, double t) {
 }
 */
 /*
-cuDoubleComplex * grad(cuDoubleComplex x, param_type param) {
+mat3DC * grad(mat3DC x) {
     // L2-norm part
     // L2Grad =
     // ALLOCATE HERE
@@ -333,35 +333,34 @@ cuDoubleComplex * grad(cuDoubleComplex x, param_type param) {
 
 /*
 // x0 is a 384x384x28 complex double matrix.
-void CSL1NlCg(cuDoubleComplex x0, param_type param) {
+void CSL1NlCg(mat3DC x0, param_type param) {
 
-    % function x = CSL1NlCg(x0,param)
-    % 
-    % res = CSL1NlCg(param)
-    %
-    % Compressed sensing reconstruction of undersampled k-space MRI data
-    %
-    % L1-norm minimization using non linear conjugate gradient iterations
-    % 
-    % Given the acquisition model y = E*x, and the sparsifying transform W, 
-    % the program finds the x that minimizes the following objective function:
-    %
-    % f(x) = ||E*x - y||^2 + lambda * ||W*x||_1 
-    %
-    % Based on the paper: Sparse MRI: The application of compressed sensing for rapid MR imaging. 
-    % Lustig M, Donoho D, Pauly JM. Magn Reson Med. 2007 Dec;58(6):1182-95.
-    %
-    % Ricardo Otazo, NYU 2008
-    %
-
+// % function x = CSL1NlCg(x0,param)
+//  % 
+//  % res = CSL1NlCg(param)
+//  %
+//  % Compressed sensing reconstruction of undersampled k-space MRI data
+//  %
+//  % L1-norm minimization using non linear conjugate gradient iterations
+//  % 
+//  % Given the acquisition model y = E*x, and the sparsifying transform W, 
+//  % the program finds the x that minimizes the following objective function:
+//  %
+//  % f(x) = ||E*x - y||^2 + lambda * ||W*x||_1 
+//  %
+//  % Based on the paper: Sparse MRI: The application of compressed sensing for rapid MR imaging. 
+//  % Lustig M, Donoho D, Pauly JM. Magn Reson Med. 2007 Dec;58(6):1182-95.
+//  %
+//  % Ricardo Otazo, NYU 2008
+//  %
+//
     printf("\n Non-linear conjugate gradient algorithm");
     printf("\n ---------------------------------------------\n");
 
-    // starting point
-    cuDoubleComplex * x = x0; // SHOULD I MAKE A COPY OR IS REFERENCE OKAY?
+    // %%%%% starting point
+    mat3DC x = copy_mat3DC(x0); // SHOULD I MAKE A COPY OR IS REFERENCE OKAY?
 
-    // line search parameters
-    // WHAT TYPES SHOULD THESE ACTUALLY BE?
+    // %%%%% line search parameters
     int maxlsiter = 150;
     double gradToll = 1e-3;
     param.l1Smooth = 1e-15;
@@ -371,16 +370,18 @@ void CSL1NlCg(cuDoubleComplex x0, param_type param) {
     double k = 0;
 
     // compute g0  = grad(f(x))
-    cuDoubleComplex * g0 = grad(x,param);
-    cuDoubleComplex * dx = -g0; // USE CUBLAS FUNCTION
+    mat3DC g0 = grad(x);
+    mat3DC dx = copy_mat3DC(g0);
+    double neg1 = -1.0;
+    cublasZdscal(handle, dx.t, &neg1, dx.d, dx.s);
 
     // %%%%% iterations
     while(1) {
         // %%%%% backtracking line-search
-	TYPE? f0 = objective(x,dx,0,param);
+	double f0 = objective(x,dx,0);
 	double t = t0;
-        TYPE? f1 = objective(x,dx,t,param);
-	TYPE? lsiter = 0;
+        double f1 = objective(x,dx,t);
+	double lsiter = 0;
 	while (f1 > f0 - alpha*t*abs(g0(:)'*dx(:)))^2 & (lsiter<maxlsiter) {
 		lsiter = lsiter + 1;
 		t = t * beta;
