@@ -37,7 +37,8 @@
  *     Must the program be designed with a specific data size in mind?
  *     Can we automatically optimize GPU given any data size (in some range)
  *     Not sure if I pulled data from liver_data.mat correctly
- *         
+ *     In cublas, is it better to take the dot product of a vector with
+ *     itself, or to take the norm and then square it?
  * Notes
  *     Any strange complex number stuff is defined in cuComplex.h
  *     Unless otherwise stated, all matlab variables are doubles
@@ -47,6 +48,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h> // for square root
+#include <time.h>
 #include <complex.h> // C complex numbers and operations; DO I EVEN USE THIS?
 #include <cuda_runtime.h>
 #include "cublas_v2.h" // CUBLAS
@@ -308,14 +310,14 @@ double objective(cuDoubleComplex * x, cuDoubleComplex * dx, double t) {
 }
 */
 /*
-mat3DC * grad(mat3DC x) {
+mat3DC grad(mat3DC x) {
     // L2-norm part
     // L2Grad =
     // ALLOCATE HERE
     cuDoubleComplex * L2Grad = 2.*(param.E'*(param.E*x-param.y));
 
     // %%%%% L1-norm part
-    if (param.lambda) { // DOES THIS WORK WITH FLOATS?
+    if(param.lambda) { // DOES THIS WORK WITH FLOATS?
         // ALLOCATE HERE
         cuDoubleComplex w = param.W*x;
         // v RIGHT TYPE? ALLOCATE
@@ -333,9 +335,9 @@ mat3DC * grad(mat3DC x) {
 
 /*
 // x0 is a 384x384x28 complex double matrix.
-void CSL1NlCg(mat3DC x0, param_type param) {
+mat3DC CSL1NlCg(mat3DC x0, param_type param) {
 
-// % function x = CSL1NlCg(x0,param)
+//  % function x = CSL1NlCg(x0,param)
 //  % 
 //  % res = CSL1NlCg(param)
 //  %
@@ -353,7 +355,7 @@ void CSL1NlCg(mat3DC x0, param_type param) {
 //  %
 //  % Ricardo Otazo, NYU 2008
 //  %
-//
+
     printf("\n Non-linear conjugate gradient algorithm");
     printf("\n ---------------------------------------------\n");
 
@@ -367,13 +369,14 @@ void CSL1NlCg(mat3DC x0, param_type param) {
     double alpha = 0.01;  
     double beta = 0.6;
     double t0 = 1; 
-    double k = 0;
+    int k = 0; // iteration counter
 
     // compute g0  = grad(f(x))
     mat3DC g0 = grad(x);
     mat3DC dx = copy_mat3DC(g0);
     double neg1 = -1.0;
     cublasZdscal(handle, dx.t, &neg1, dx.d, dx.s);
+
 
     // %%%%% iterations
     while(1) {
@@ -382,10 +385,15 @@ void CSL1NlCg(mat3DC x0, param_type param) {
 	double t = t0;
         double f1 = objective(x,dx,t);
 	double lsiter = 0;
-	while (f1 > f0 - alpha*t*abs(g0(:)'*dx(:)))^2 & (lsiter<maxlsiter) {
-		lsiter = lsiter + 1;
-		t = t * beta;
-		f1 = objective(x,dx,t,param);
+        cuDoubleComplex g0dxdotprod;
+	while (1) {
+                cublasZdotc(handle, g0.t, g0.d, g0.s, dx.d, dx.s, &dotprod);
+                if (!(f1 > f0 - alpha*t*cuCabs(dotprod)) || !(lsiter < maxlsiter)) {
+                    break;
+                }
+		lsiter = lsiter + 1.0; 
+		t = t*beta;
+		f1 = objective(x,dx,t);
 	}
 	if (lsiter == maxlsiter) {
 		disp('Error - line search ...');
@@ -393,29 +401,38 @@ void CSL1NlCg(mat3DC x0, param_type param) {
 	}
 
 	// %%%%% control the number of line searches by adapting the initial step search
-	if (lsiter > 2), t0 = t0 * beta;end 
-	if lsiter<1, t0 = t0 / beta; end
+	if (lsiter > 2) { t0 = t0 * beta; }
+	if (lsiter < 1) { t0 = t0 / beta; }
 
         // %%%%% update x
-	x = (x + t*dx);
+	// x = (x + t*dx);
+        cublasZaxpy(handle, x.t, &make_cuDoubleComplex(t, 0), dx.d, dx.s, x.d, x.s);
+
 
 	// %%%%% print some numbers	
-        if (param.display) {
-            fprintf(' ite = %d, cost = %f \n',k,f1);
-        }
-    
+        fprintf("ite = %d, cost = %f\n",k,f1);
+
         // %%%%% conjugate gradient calculation
-	g1 = grad(x,param);
-	bk = g1(:)'*g1(:)/(g0(:)'*g0(:)+eps);
+	mat3DC g1 = grad(x);
+        cuDoubleComplex g1dotprod;
+        cuDoubleComplex g0dotprod;
+        cublasZdotc(handle, g1.t, g1.d, g1.s, g1.d, g1.s, &g1dotprod);
+        cublasZdotc(handle, g0.t, g0.d, g0.s, g0.d, g0.s, &g0dotprod);
+        double g1dotprodreal = cuCreal(g1dotprod);
+        double g0dotprodreal = cuCreal(g0dotprod);
+	double bk = g1dotprodreal/(g0dotprodreal + DBL_EPSILON);
 	g0 = g1;
-	dx =  - g1 + bk* dx;
-	k = k + 1;
+	// dx =  -g1 + bk*dx;
+        cublasZdscal(handle, dx.t, &make_cuDoubleComplex(bk, 0.0), dx.d, dx.s);
+        cublasZaxpy(handle, g1.t, &neg1,`g1.d, g1.s, dx.d, dx.s);  
+	k++;
 	
 	// %%%%% stopping criteria (to be improved)
-	if (k > param.nite) || (norm(dx(:)) < gradToll), break;end
-
+        double normdx;
+        cublasDznrm2(handle, dx.t, dx.d, dx.s, &normdx);
+	if (k > param.nite) || (normdx < gradToll) { break; }
     }
-    return;
+    return x;
 }
 */
 /*
@@ -709,7 +726,7 @@ int main(int argc,char **argv) {
     // ' := conjugate transpose; * := matrix multiplication
     // ' and * are overloaded, defined in @MCNUFFT
     // what's the order of operations, or does it matter? 
-    recon_nufft=param.E'*param.y;
+    mat3DC recon_nufft=param.E'*param.y;
 */
 /*
     // %%%%% parameters for reconstruction
@@ -723,12 +740,12 @@ int main(int argc,char **argv) {
 */
     // fprintf('\n GRASP reconstruction \n')
 
-    // tic
-    // recon_cs=recon_nufft;
-    // for n=1:3,
+    // long starttime = clock_gettime(CLOCK_MONOTONIC, tv_nsec);
+    // mat3DC recon_cs=recon_nufft;
+    // for (i = 0; i < 4; i++) {
     //     recon_cs = CSL1NlCg(recon_cs,param);
-    // end
-    // toc
+    // }
+    // long elapsedtime = (clock_gettime(CLOCK_MONOTONIC, tv_nsec) - starttime)/1000000;
 
     // recon_nufft=flipdim(recon_nufft,1);
     // recon_cs=flipdim(recon_cs,1);
