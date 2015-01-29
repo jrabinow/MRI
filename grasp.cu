@@ -1,6 +1,6 @@
  /*
  * C/CUDA implementation of GRASP. 
- * Translated from Matlab by Felix Moody, Fall 2014  
+ * Translated from Matlab by Felix Moody and Julien Rabinow, Fall 2014-Spring 2015 
  * Dependencies:
  *     CUDA compute capability ????, toolkit version ???, driver version ???
  *     Developed on Tesla T10 (see "CIMS cuda3 deviceQuery output.txt")
@@ -216,7 +216,7 @@ mat3DC copy_mat3DC(mat3DC in) {
 }
     
 /*
-struct param_type { // ARE THESE THE RIGHT TYPES?
+struct paraxm_type { // ARE THESE THE RIGHT TYPES?
     cuDoubleComplex * E; // MCNUFFT
     cuDoubleComplex * y; // kdatau
     cuDoubleComplex * W; // Total variate dohicky
@@ -334,7 +334,7 @@ mat3DC grad(mat3DC x) {
 */
 
 /*
-// x0 is a 384x384x28 complex double matrix.
+// x0 is a .
 mat3DC CSL1NlCg(mat3DC x0, param_type param) {
 
 //  % function x = CSL1NlCg(x0,param)
@@ -639,11 +639,14 @@ int main(int argc,char **argv) {
 
     // b1=b1/max(abs(b1(:)))
     // scale b1 by maximum modulus
-    int max_modulus_index;
-    stat = cublasIzamax(handle, b1.t, b1.d, b1.s, &max_modulus_index);
-/*    const double max_modulus = cuCabs(b1_cpu[max_modulus_index]);
-    stat = cublasZdscal(handle, b1.t, &max_modulus, b1.d, b1.s);
-
+    int max_mod_idx;
+    cuDoubleComplex max_mod_num;
+    double max_mod;
+    cublasIzamax(handle, b1.t, b1.d, b1.s, &max_mod_idx);
+    cudaMemcpy(&max_mod_num, &(b1.d[max_mod_idx]), b1.s, cudaMemcpyDeviceToHost);
+    max_mod = cuCabs(max_mod_num);
+    cublasZdscal(handle, b1.t, &max_mod, b1.d, b1.s);
+/*
     // for ch=1:nc,kdata(:,:,ch)=kdata(:,:,ch).*sqrt(w);endc
     // i.e. multiply each of the 12 slices of kdata element-wise by sqrt(w)
     dim3 numBlocks(nx, ntviews);
