@@ -536,6 +536,23 @@ void print3Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int
 }
 */
 
+void printcol_mat3DC(mat3DC mat, int col, int slice) {
+    int i=0;
+    cuDoubleComplex elem;
+    cuDoubleComplex * mat_cpu = (cuDoubleComplex *)malloc(mat.s*mat.t);
+    cudaError_t cudaStat;
+    cudaStat = cudaMemcpy(mat_cpu, mat.d, mat.s*mat.t, cudaMemcpyDeviceToHost);
+    if (cudaStat != cudaSuccess) {
+        fprintf(stderr, "Print failure\n");
+        exit(EXIT_FAILURE);
+    }
+    for(i = 0; i < mat.x; i++) {
+        elem = mat_cpu[I3D(i, col, slice, mat.x, mat.y)];
+        printf("%f + %fi\n", cuCreal(elem), cuCimag(elem));
+    }
+}
+
+
 int main(int argc,char **argv) {
     // Data size (determines gpu optimization, so don't change lightly!)
     int nx = 768;
@@ -586,6 +603,8 @@ int main(int argc,char **argv) {
     fread(kdata_cpu, sizeof(cuDoubleComplex), nx*ntviews*nc, kdata_file);
     double * w_cpu = (double *)malloc(nx*ntviews * sizeof(double));
     fread(w_cpu, sizeof(double), nx*ntviews, w_file);
+
+    //printf("%f\n", cuCreal(b1_cpu[147456]));
 
     // allocate b1, k, kdata, w on GPU
     mat3DC b1 = new_mat3DC(nx/2, nx/2, nc);
