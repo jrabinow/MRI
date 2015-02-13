@@ -1,9 +1,9 @@
 CC=nvcc
 CFLAGS=-Iincludes #-Wall -Wextra
 LDFLAGS=-lcublas
-ifeq ($(CC), gcc)
-	CFLAGS += --short-enums
-endif
+#ifeq ($(CC), gcc)
+#	CFLAGS += --short-enums
+#endif
 
 all: CFLAGS += -O3
 #all: LDFLAGS += -s
