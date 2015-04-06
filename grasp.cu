@@ -1,12 +1,12 @@
  /*
- * C/CUDA implementation of GRASP. 
- * Translated from Matlab by Felix Moody and Julien Rabinow, Fall 2014-Spring 2015 
+ * C/CUDA implementation of GRASP.
+ * Translated from Matlab by Felix Moody and Julien Rabinow, Fall 2014-Spring 2015
  * Dependencies:
  *     CUDA compute capability ????, toolkit version ???, driver version ???
  *     Developed on Tesla T10 (see "CIMS cuda3 deviceQuery output.txt")
  * To compile with nvcc and cublas
  *     $nvcc grasp.cu -o grasp -lcublas
- * Input: from liver_data.mat (stored in column major format): 
+ * Input: from liver_data.mat (stored in column major format):
  *     Coil sensitivities b1 -- 384x384x12 complex doubles (image x, image y, coil)
  *     K-space trajectories k -- 768x600 complex doubles (position in k space, experiment)
  *     Sample density compensation w: 768x600 doubles (real number between 0 and 1, experiment)
@@ -16,13 +16,13 @@
  *     2nd dim k = 2nd dim kdata = 2nd dim w
  *     3rd dim b1 = 3rd dim kdata
  *     1st dim k = 1st dim kdata =  1st dim w = 2 * 1st dim b1
- * So there are 3 variables to data size: nx, ntviews, and nc, and:   
+ * So there are 3 variables to data size: nx, ntviews, and nc, and:
  *     b1 = (nx/2, nx/2, nc)
  *     k = (nx, ntviews)
  *     kdata = (nx, ntviews, nc)
  *     w = (nx, ntviews)
  * Todo/Questions (also caps means questions):
- *     Could we and should we use CUSPARSE instead of cuBLAS? 
+ *     Could we and should we use CUSPARSE instead of cuBLAS?
  *     Can multiple threads access the same memory? At the same time?
  *     How do we think about blocks vs grids? When is it best to break into
  *        blocks and when grids if data fits both?
@@ -67,21 +67,24 @@ struct mat2D {
     int t; // total # of entries
     int s; // size in bytes of each entry
 };
+
 struct mat2DC {
     cuDoubleComplex * d;
     int x; // 1st dim size
     int y; // 2nd dim size
     int t;
-    int s; 
+    int s;
 };
+
 struct mat3D {
-    double * d; 
+    double * d;
     int x; // 1st dim size
     int y; // 2nd dim size
     int z; // 3rd dim size
     int t;
     int s;
 };
+
 struct mat3DC {
     cuDoubleComplex * d;
     int x;
@@ -90,15 +93,17 @@ struct mat3DC {
     int t;
     int s;
 };
+
 struct mat4D {
     double * d;
     int x; // 1st dim size
     int y; // 2nd dim size
-    int z; // 3rd dim size 
+    int z; // 3rd dim size
     int w; // 4th dim size
     int t;
     int s;
 };
+
 struct mat4DC {
     cuDoubleComplex * d;
     int x;
@@ -117,12 +122,13 @@ mat2D new_mat2D(int xsize, int ysize) {
     thismat.t = xsize*ysize;
     thismat.s = sizeof(double);
     cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         fprintf(stderr, "Failed allocating matrix on GPU\n");
         exit(EXIT_FAILURE);
     }
     return thismat;
 }
+
 mat2DC new_mat2DC(int xsize, int ysize) {
     mat2DC thismat;
     thismat.x = xsize;
@@ -130,12 +136,13 @@ mat2DC new_mat2DC(int xsize, int ysize) {
     thismat.t = xsize*ysize;
     thismat.s = sizeof(cuDoubleComplex);
     cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         fprintf(stderr, "Failed allocating matrix on GPU\n");
         exit(EXIT_FAILURE);
     }
     return thismat;
 }
+
 mat3D new_mat3D(int xsize, int ysize, int zsize) {
     mat3D thismat;
     thismat.x = xsize;
@@ -144,12 +151,13 @@ mat3D new_mat3D(int xsize, int ysize, int zsize) {
     thismat.t = xsize*ysize*zsize;
     thismat.s = sizeof(double);
     cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         fprintf(stderr, "Failed allocating matrix on GPU\n");
         exit(EXIT_FAILURE);
     }
     return thismat;
 }
+
 mat3DC new_mat3DC(int xsize, int ysize, int zsize) {
     mat3DC thismat;
     thismat.x = xsize;
@@ -158,12 +166,13 @@ mat3DC new_mat3DC(int xsize, int ysize, int zsize) {
     thismat.t = xsize*ysize*zsize;
     thismat.s = sizeof(cuDoubleComplex);
     cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         fprintf(stderr, "Failed allocating matrix on GPU\n");
         exit(EXIT_FAILURE);
     }
     return thismat;
 }
+
 mat4D new_mat4D(int xsize, int ysize, int zsize, int wsize) {
     mat4D thismat;
     thismat.x = xsize;
@@ -173,12 +182,13 @@ mat4D new_mat4D(int xsize, int ysize, int zsize, int wsize) {
     thismat.t = xsize*ysize*zsize*wsize;
     thismat.s = sizeof(double);
     cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         fprintf(stderr, "Failed allocating matrix on GPU\n");
         exit(EXIT_FAILURE);
     }
     return thismat;
 }
+
 mat4DC new_mat4DC(int xsize, int ysize, int zsize, int wsize) {
     mat4DC thismat;
     thismat.x = xsize;
@@ -188,7 +198,7 @@ mat4DC new_mat4DC(int xsize, int ysize, int zsize, int wsize) {
     thismat.t = xsize*ysize*zsize*wsize;
     thismat.s = sizeof(cuDoubleComplex);
     cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         fprintf(stderr, "Failed allocating matrix on GPU\n");
         exit(EXIT_FAILURE);
     }
@@ -199,22 +209,23 @@ mat4DC new_mat4DC(int xsize, int ysize, int zsize, int wsize) {
 mat3D copy_mat3D(mat3D in) {
     mat3D thismat = new_mat3D(in.x, in.y, in.z);
     cudaError_t err = cudaMemcpy(thismat.d, in.d, in.t*in.s, cudaMemcpyDeviceToDevice);
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         fprintf(stderr, "Failed duplicating matrix on GPU\n");
         exit(EXIT_FAILURE);
     }
     return thismat;
 }
+
 mat3DC copy_mat3DC(mat3DC in) {
     mat3DC thismat = new_mat3DC(in.x, in.y, in.z);
     cudaError_t err = cudaMemcpy(thismat.d, in.d, in.t*in.s, cudaMemcpyDeviceToDevice);
-    if (err != cudaSuccess) { 
+    if (err != cudaSuccess) {
         fprintf(stderr, "Failed duplicating matrix on GPU\n");
         exit(EXIT_FAILURE);
     }
     return thismat;
 }
-    
+
 /*
 struct paraxm_type { // ARE THESE THE RIGHT TYPES?
     cuDoubleComplex * E; // MCNUFFT
@@ -225,8 +236,6 @@ struct paraxm_type { // ARE THESE THE RIGHT TYPES?
     int nite = 8; //
 } param;
 */
-
-
 /*
 static __inline__ void modify(cublasHandle_t handle, float *m, int ldm, int n, int p, int q, float alpha, float beta){
     cublasSscal (handle, n-p, &alpha, &m[IDX2C(p,q,ldm)], ldm);
@@ -246,27 +255,23 @@ __global__ void TV_Temp(cuDoubleComplex * x, cuDoubleComplex * y, int adjoint) {
                 = -x[I3D(threadIdx.x, threadIdx.y, 1, blockDim.x, blockDim.y)];
         } else if (blockIdx.x == gridDim.x) {
             y[I3D(threadIdx.x, threadIdx.y, gridDim.x, blockDim.x, blockDim.y)]
-                = x[I3D(threadIdx.x, threadIdx.y, gridDim.x-1, blockDim.x, blockDim.y)];            
+                = x[I3D(threadIdx.x, threadIdx.y, gridDim.x-1, blockDim.x, blockDim.y)];
         } else {
             y[I3D(threadIdx.x, threadIdx.y, blockId.x, blockDim.x, blockDim.y)]
-                = x[I3D(threadIdx.x, threadIdx.y, blockId.x-1, blockDim.x, blockDim.y)]            
+                = x[I3D(threadIdx.x, threadIdx.y, blockId.x-1, blockDim.x, blockDim.y)]
                 - x[I3D(threadIdx.x, threadIdx.y, blockId.x, blockDim.x, blockDim.y)];
         }
     if (adjoint == 0) {
             y[I3D(threadIdx.x, threadIdx.y, blockId.x, blockDim.x, blockDim.y)]
-                = x[I3D(threadIdx.x, threadIdx.y, blockId.x+1, blockDim.x, blockDim.y)]            
+                = x[I3D(threadIdx.x, threadIdx.y, blockId.x+1, blockDim.x, blockDim.y)]
                 - x[I3D(threadIdx.x, threadIdx.y, blockId.x, blockDim.x, blockDim.y)];
     }
 }
 */
-
-
-
 /*
-
 __global__ void L1HelperKernel(cuDoubleComplex * in, double * out, double l1Smooth) {
     // compute index based on block/grid size
-    int i = 
+    int i =
     out.d[i] = sqrt(cuCabs(in.d[i]) + l1Smooth);
 }
 
@@ -287,11 +292,11 @@ double objective(cuDoubleComplex * x, cuDoubleComplex * dx, double t) {
     cublasZaxpy(handle, x.t, &t_complex, dx.d, dx.s, next_x.d, next_x.s);
     // INSERT FFT HERE
     // mat3DC ft = MCNUFFT(next_x);
-    //  ft = ft + (-1)*param.y 
+    //  ft = ft + (-1)*param.y
     cublasZaxpy(handle, x.t, &minus1, param.y.d, param.y.s, ft.d, ft.s);
     // L2Obj = ft complex dot product ft
     cuDoubleComplex L2Obj;
-    cublasZdotc(handle, ft.t, ft.s, ft.t, ft.s, &L2Obj); // IS THIS RIGHT? 
+    cublasZdotc(handle, ft.t, ft.s, ft.t, ft.s, &L2Obj); // IS THIS RIGHT?
 
     // %%%%% L1-norm part
     // w = param.W*(x+t*dx);
@@ -304,7 +309,7 @@ double objective(cuDoubleComplex * x, cuDoubleComplex * dx, double t) {
     L1HelperKernel<<numBlocks, w.z>>(w, temp, param.l1Smooth);
     double L1Obj;
     cublasDasum(handle, temp.t, temp.d, temp.s, &L1Obj);
-    
+
     // %%%%% objective function
     return L2Obj+param.lambda*L1Obj;
 }
@@ -338,19 +343,19 @@ mat3DC grad(mat3DC x) {
 mat3DC CSL1NlCg(mat3DC x0, param_type param) {
 
 //  % function x = CSL1NlCg(x0,param)
-//  % 
+//  %
 //  % res = CSL1NlCg(param)
 //  %
 //  % Compressed sensing reconstruction of undersampled k-space MRI data
 //  %
 //  % L1-norm minimization using non linear conjugate gradient iterations
-//  % 
-//  % Given the acquisition model y = E*x, and the sparsifying transform W, 
+//  %
+//  % Given the acquisition model y = E*x, and the sparsifying transform W,
 //  % the program finds the x that minimizes the following objective function:
 //  %
-//  % f(x) = ||E*x - y||^2 + lambda * ||W*x||_1 
+//  % f(x) = ||E*x - y||^2 + lambda * ||W*x||_1
 //  %
-//  % Based on the paper: Sparse MRI: The application of compressed sensing for rapid MR imaging. 
+//  % Based on the paper: Sparse MRI: The application of compressed sensing for rapid MR imaging.
 //  % Lustig M, Donoho D, Pauly JM. Magn Reson Med. 2007 Dec;58(6):1182-95.
 //  %
 //  % Ricardo Otazo, NYU 2008
@@ -366,9 +371,9 @@ mat3DC CSL1NlCg(mat3DC x0, param_type param) {
     int maxlsiter = 150;
     double gradToll = 1e-3;
     param.l1Smooth = 1e-15;
-    double alpha = 0.01;  
+    double alpha = 0.01;
     double beta = 0.6;
-    double t0 = 1; 
+    double t0 = 1;
     int k = 0; // iteration counter
 
     // compute g0  = grad(f(x))
@@ -391,7 +396,7 @@ mat3DC CSL1NlCg(mat3DC x0, param_type param) {
                 if (!(f1 > f0 - alpha*t*cuCabs(dotprod)) || !(lsiter < maxlsiter)) {
                     break;
                 }
-		lsiter = lsiter + 1.0; 
+		lsiter = lsiter + 1.0;
 		t = t*beta;
 		f1 = objective(x,dx,t);
 	}
@@ -409,7 +414,7 @@ mat3DC CSL1NlCg(mat3DC x0, param_type param) {
         cublasZaxpy(handle, x.t, &make_cuDoubleComplex(t, 0), dx.d, dx.s, x.d, x.s);
 
 
-	// %%%%% print some numbers	
+	// %%%%% print some numbers
         fprintf("ite = %d, cost = %f\n",k,f1);
 
         // %%%%% conjugate gradient calculation
@@ -424,9 +429,9 @@ mat3DC CSL1NlCg(mat3DC x0, param_type param) {
 	g0 = g1;
 	// dx =  -g1 + bk*dx;
         cublasZdscal(handle, dx.t, &make_cuDoubleComplex(bk, 0.0), dx.d, dx.s);
-        cublasZaxpy(handle, g1.t, &neg1,`g1.d, g1.s, dx.d, dx.s);  
+        cublasZaxpy(handle, g1.t, &neg1,`g1.d, g1.s, dx.d, dx.s);
 	k++;
-	
+
 	// %%%%% stopping criteria (to be improved)
         double normdx;
         cublasDznrm2(handle, dx.t, dx.d, dx.s, &normdx);
@@ -437,7 +442,7 @@ mat3DC CSL1NlCg(mat3DC x0, param_type param) {
 */
 /*
 ???? MCNUFFT(k,w,b1) {
-    // function  res = MCNUFFT(k,w,b1) 
+    // function  res = MCNUFFT(k,w,b1)
     // k and w here are ku and wu in main, which are the columns of k and w split
     // into nt "frames" of nspokes columns, with frames indexed by the added last dimension
     // so, here k is a 768 x nspokes x nt complex double matrix
@@ -452,7 +457,7 @@ mat3DC CSL1NlCg(mat3DC x0, param_type param) {
     % b1: coil sensitivity maps
     %
     % Li Feng & Ricardo Otazo, NYU, 2012
-    
+
     Nd = [nx,ntviews]; // 3rd dim of b1
     Jd = [6,6];
     Kd = [nx*1.5,ntviews*1.5]
@@ -500,7 +505,7 @@ void print2Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int
 				imag_part = cuCimag(matC->d[I2D(i, j, matC->y)]);
 				printf("%f + i*%f ", real_part, imag_part);
 			}
-				
+
 	} else {
 		matR = (mat2D*) matrix;
 		for(i = srow; i < frow; i++)
@@ -519,16 +524,16 @@ void print3Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int
 	mat2DC *matC;
 
 	if(iscomplex) {
-		matC = (mat2DC*) matrix;
+		matC = (mat3DC*) matrix;
 		for(i = tlrow; i < brrow; i++)
 			for(j = tlcol; j < brcol; j++) {
 				real_part = cuCreal(matC->d[I2D(i, j, matC->y)]);
 				imag_part = cuCimag(matC->d[I2D(i, j, matC->y)]);
 				printf("%f + i*%f ", real_part, imag_part);
 			}
-				
+
 	} else {
-		matR = (mat2D*) matrix;
+		matR = (mat3D*) matrix;
 		for(i = tlrow; i < brrow; i++)
 			for(j = tlcol; j < brcol; j++)
 				printf("%f ", matR->d[I2D(i, j, matR->y)]);
@@ -559,7 +564,7 @@ int main(int argc,char **argv) {
     int ntviews = 600;
     int nc = 12;
 
-    int i, j, l, m; // general loop indices (skipped k due to conflict)   
+    int i, j, l, m; // general loop indices (skipped k due to conflict)
     cudaError_t cudaStat; // cuda error variable
     cublasStatus_t stat; // CUBLAS error variable
     cublasHandle_t handle; // handle to CUBLAS context
@@ -611,7 +616,7 @@ int main(int argc,char **argv) {
     mat2DC k = new_mat2DC(nx, ntviews);
     mat3DC kdata = new_mat3DC(nx, ntviews, nc);
     mat2D w = new_mat2D(nx, ntviews);
-   
+
     /* (replaced by matrix structs and constructors
     cuDoubleComplex * b1_d;
     cuDoubleComplex * k_d;
@@ -686,7 +691,7 @@ int main(int argc,char **argv) {
                 kdata_d[I3D(i,j,k,nx,nt*nspokes)] = kdata_d[I3D(i,j,k,nx,ntviews)];
             }
          }
-    }    
+    }
     // k=k(:,1:nt*nspokes)
     for (i = 0; i < nx; i++ {
         for (j = 0; j < nt*nspokes; j++) {
@@ -717,7 +722,7 @@ int main(int argc,char **argv) {
                     kdatau.d[I4D(i,j,l,m,nx,nspokes,nc)] = kdata.d[I3D(i,j*m,l,nx,ntviews)];
                 }
              }
-        } 
+        }
     }
     for (l = 0; l < nt; l++) {
         for (i = 0; i < nx; i++ {
@@ -747,7 +752,7 @@ int main(int argc,char **argv) {
     // %%%%% nufft recon
     // ' := conjugate transpose; * := matrix multiplication
     // ' and * are overloaded, defined in @MCNUFFT
-    // what's the order of operations, or does it matter? 
+    // what's the order of operations, or does it matter?
     mat3DC recon_nufft=param.E'*param.y;
 */
 /*
@@ -808,7 +813,7 @@ int main(int argc,char **argv) {
     cudaFree(w.d);
 
     // destroy cuBLAS context
-    cublasDestroy(handle); 
+    cublasDestroy(handle);
 
     // free CPU memory
     free(b1_cpu);

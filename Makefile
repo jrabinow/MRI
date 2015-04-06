@@ -1,18 +1,15 @@
 CC=nvcc
-CFLAGS=-Iincludes #-Wall -Wextra
+CFLAGS=-Iincludes
 LDFLAGS=-lcublas
-#ifeq ($(CC), gcc)
-#	CFLAGS += --short-enums
-#endif
+BINARY=grasp
 
 all: CFLAGS += -O3
-#all: LDFLAGS += -s
-all: depend grasp
+all: depend $(BINARY)
 
 debug: CFLAGS += -g -DDEBUG
-debug: depend grasp
+debug: depend $(BINARY)
 
-grasp: grasp.cu
+$(BINARY): grasp.cu
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
 .SUFFIXES: .cu
@@ -26,16 +23,11 @@ depend:
 
 -include .depend
 
-compress: $(BINARY)
-	gzexe $(BINARY) && $(RM) $(BINARY)~
-
-decompress:
-	test -f $(BINARY) && gzexe -d $(BINARY) && $(RM) $(BINARY)~ || $(MAKE)
-
 .PHONY: clean distclean depend
 
 clean:
 	$(RM) *.o
 
 distclean: clean
-	$(RM) grasp
+	$(RM) $(BINARY)
+
