@@ -1,15 +1,12 @@
 /*
- * C/CUDA implementation of GRASP. 
- * Translated from Matlab by Felix Moody, Fall 2014  
+ * C/CUDA implementation of GRASP.
+ * Translated from Matlab by Felix Moody, Fall 2014
  * Dependencies:
  *     CUDA compute capability ????, toolkit version ???, driver version ???
  * Input:
- * 	Coil sensitivities b1: (image x, image y, coil)
- *	K-space trajectories: (position in k space, 
-
-
-
- * Matrices from liver_data.mat (stored in column major format): 
+ *	Coil sensitivities b1: (image x, image y, coil)
+ *	K-space trajectories: (position in k space,
+ * Matrices from liver_data.mat (stored in column major format):
  *     b1: 384x384x12 complex doubles
  *     k: 768x600 complex? doubles
  *     kdata: 768x600x12 complex? doubles
@@ -19,7 +16,7 @@
  *     2nd dim k = 2nd dim kdata = 2nd dim w
  *     3rd dim b1 = 3rd dim kdata
  *     1st dim k = 1st dim kdata =  1st dim w = 2 * 1st dim b1
- * So there are 3 variables to data size: nx, ntviews, and nc, and:   
+ * So there are 3 variables to data size: nx, ntviews, and nc, and:
  *     b1 = (nx/2, nx/2, nc)
  *     k = (nx, ntviews)
  *     kdata = (nx, ntviews, nc)
@@ -27,13 +24,10 @@
  *
  * GRASP Pipeline:
  * Input:
- * 	b1: (amplitude, time, coil)
- *	k: 
+ *	b1: (amplitude, time, coil)
+ *	k:
  *	kdata: (amplitutde, time, coil)
- *
- *
  */
-
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -75,7 +69,7 @@ void objective(x,dx,t,param) {
 
     // %%%%% L1-norm part
     if (param.lambda) {
-        w = param.W*(x+t*dx); 
+        w = param.W*(x+t*dx);
         L1Obj = sum((conj(w(:)).*w(:)+param.l1Smooth).^(1/2));
     } else {
         L1Obj=0;
@@ -108,19 +102,19 @@ void grad(x,param) {
 void CSL1NlCg(x0, param) {
 
     % function x = CSL1NlCg(x0,param)
-    % 
+    %
     % res = CSL1NlCg(param)
     %
     % Compressed sensing reconstruction of undersampled k-space MRI data
     %
     % L1-norm minimization using non linear conjugate gradient iterations
-    % 
-    % Given the acquisition model y = E*x, and the sparsifying transform W, 
+    %
+    % Given the acquisition model y = E*x, and the sparsifying transform W,
     % the program finds the x that minimizes the following objective function:
     %
-    % f(x) = ||E*x - y||^2 + lambda * ||W*x||_1 
+    % f(x) = ||E*x - y||^2 + lambda * ||W*x||_1
     %
-    % Based on the paper: Sparse MRI: The application of compressed sensing for rapid MR imaging. 
+    % Based on the paper: Sparse MRI: The application of compressed sensing for rapid MR imaging.
     % Lustig M, Donoho D, Pauly JM. Magn Reson Med. 2007 Dec;58(6):1182-95.
     %
     % Ricardo Otazo, NYU 2008
@@ -137,9 +131,9 @@ void CSL1NlCg(x0, param) {
     int maxlsiter = 150 ;
     double gradToll = 1e-3 ; // does this work?
     double param.l1Smooth = 1e-15;	// ??
-    double alpha = 0.01;  
+    double alpha = 0.01;
     double beta = 0.6;
-    double t0 = 1 ; 
+    double t0 = 1 ;
     double k = 0;
 
     // %%%%% compute g0  = grad(f(x))
@@ -164,24 +158,24 @@ void CSL1NlCg(x0, param) {
 	}
 
 	// %%%%% control the number of line searches by adapting the initial step search
-	if (lsiter > 2), t0 = t0 * beta;end 
+	if (lsiter > 2), t0 = t0 * beta;end
 	if lsiter<1, t0 = t0 / beta; end
 
         // %%%%% update x
 	x = (x + t*dx);
 
-	// %%%%% print some numbers	
+	// %%%%% print some numbers
         if (param.display) {
             fprintf(' ite = %d, cost = %f \n',k,f1);
         }
-    
+
         // %%%%% conjugate gradient calculation
 	g1 = grad(x,param);
 	bk = g1(:)'*g1(:)/(g0(:)'*g0(:)+eps);
 	g0 = g1;
 	dx =  - g1 + bk* dx;
 	k = k + 1;
-	
+
 	// %%%%% stopping criteria (to be improved)
 	if (k > param.nite) || (norm(dx(:)) < gradToll), break;end
 
@@ -191,7 +185,7 @@ void CSL1NlCg(x0, param) {
 */
 /*
 ???? MCNUFFT(k,w,b1) {
-    // function  res = MCNUFFT(k,w,b1) 
+    // function  res = MCNUFFT(k,w,b1)
     // k and w here are ku and wu in main, which are the columns of k and w split
     // into nt "frames" of nspokes columns, with frames indexed by the added last dimension
     // so, here k is a 768 x nspokes x nt complex double matrix
@@ -206,7 +200,7 @@ void CSL1NlCg(x0, param) {
     % b1: coil sensitivity maps
     %
     % Li Feng & Ricardo Otazo, NYU, 2012
-    
+
     Nd = [nx,ntviews]; // 3rd dim of b1
     Jd = [6,6];
     Kd = [nx*1.5,ntviews*1.5]
@@ -226,7 +220,6 @@ void CSL1NlCg(x0, param) {
 }
 */
 
-
 __global__ void elementWiseMultBySqrt(cuDoubleComplex* kdata, double* w) {
     // Definitely not ideal. Is it bad to only use one thread per block?
     // Also we should only have to compute the squares of the elements of w
@@ -238,9 +231,8 @@ __global__ void elementWiseMultBySqrt(cuDoubleComplex* kdata, double* w) {
     kdata[i] = cuCmul(kdata[i], sqrtofelement); // WARNING
 }
 
-
 int main(int argc,char **argv) {
-    int i, j, k, l; // general loop indices    
+    int i, j, k, l; // general loop indices
     cudaError_t cudaStat; // cuda error type
     cublasStatus_t stat; // CUBLAS error type
     cublasHandle_t handle; // handle to CUBLAS context
@@ -345,7 +337,7 @@ int main(int argc,char **argv) {
                 kdata_d[I3D(i,j,k,nx,nt*nspokes)] = kdata_d[I3D(i,j,k,nx,ntviews)];
             }
          }
-    }    
+    }
     // k=k(:,1:nt*nspokes)
     for (i = 0; i < nx; i++ {
         for (j = 0; j < nt*nspokes; j++) {
@@ -365,7 +357,7 @@ int main(int argc,char **argv) {
     // divide the 2nd dimension of kdata, k, and w up into nt "frames" of
     // nspokes columns, then index the frames by an added dimension
     // for ii=1:nt
-    //     kdatau(:,:,:,ii)=kdata(:,(ii-1)*nspokes+1:ii*nspokes,:); 
+    //     kdatau(:,:,:,ii)=kdata(:,(ii-1)*nspokes+1:ii*nspokes,:);
     //     ku(:,:,ii)=k(:,(ii-1)*nspokes+1:ii*nspokes);
     //     wu(:,:,ii)=w(:,(ii-1)*nspokes+1:ii*nspokes);
     // end
@@ -416,14 +408,10 @@ int main(int argc,char **argv) {
     // recon_cs2=cat(2,recon_cs2,recon_cs(:,:,13));
     // recon_cs2=cat(2,recon_cs2,recon_cs(:,:,23));
 
-
-
     // figure;
     // subplot(2,1,1),imshow(abs(recon_nufft2),[]);title('Zero-filled FFT')
     // subplot(2,1,2),imshow(abs(recon_cs2),[]);title('GRASP')
-
 */
-
 /*
     // send matrix to GPU
     stat = cublasSetMatrix (M, N, sizeof(*a), a, M, devPtrA, M);
@@ -446,11 +434,6 @@ int main(int argc,char **argv) {
     }
 */
 
-
-
-
-
-
     // free GPU memory
     cudaFree(b1_d);
     cudaFree(k_d);
@@ -466,7 +449,6 @@ int main(int argc,char **argv) {
     free(kdata);
     free(w);
 
-
     // for ch=1:nc,kdata(:,:,ch)=kdata(:,:,ch).*sqrt(w);end
     // this means to multiply each element in each slice of kdata with the
     // square of the corresponding element of w
@@ -476,5 +458,4 @@ int main(int argc,char **argv) {
     //    kdata(:,:,ch)=kdata(:,:,ch).*sqrt(w)
     //}
     //printf("%f + %fi\n", creal(b1[3]), cimag(b1[3]));
-    
 }
