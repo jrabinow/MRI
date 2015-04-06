@@ -53,6 +53,8 @@
 #include <cuda_runtime.h>
 #include "cublas_v2.h" // CUBLAS
 #include <cuComplex.h> // CUDA complex numbers and operations
+/* CORRECT LINKING DEMO */
+#include <cuda_utils.hpp>
 
 // Macros to convert multidimensional indices to 1 dimensional row major index
 #define I2D(i,j,j_tot) ((i*j_tot) + j)
@@ -545,6 +547,9 @@ int main(int argc,char **argv) {
     int nx = 768;
     int ntviews = 600;
     int nc = 12;
+
+    /* CORRECT LINKING DEMO */
+    bindTo1DTexture("symbol", NULL, 0);
 
     // GPU block and grid dimensions
     int bt = 512; // max threads per block total
