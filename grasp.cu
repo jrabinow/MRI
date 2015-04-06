@@ -59,6 +59,24 @@
 #define I3D(i,j,k,i_tot,j_tot) ((i*j_tot) + j + (k*i_tot*j_tot))
 #define I4D(i,j,k,l,i_tot,j_tot,k_tot) ((i*j_tot) + j + (k*i_tot*j_tot) + (l*i_tot*j_tot*k_tot))
 
+// cuda and cublas error handlers wrappers
+#define cudaErrChk(err) { cudaErrorHandler(err, __FILE__, __LINE__); }
+#define cublasErrChk(err) {cublasErrorHandler(err, __FILE__, __LINE__); }
+
+// cuda and cublas error handlers
+inline void cudaErrorHandler(cudaError_t err, const char * file, int line) {
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA Error in %s on line %d:%s\n", file, line, cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+}
+inline void cublasErrorHandler(cublasStatus_t err, const char * file, int line) {
+    if (err != CUBLAS_STATUS_SUCCESS) {
+        fprintf(stderr, "CUBLAS Error in %s on line $d:%s\n", file, line, (const char *)err);
+        exit(EXIT_FAILURE);
+    }
+}
+
 // matrix types
 struct mat2D {
     double * d; // the actual data
@@ -70,8 +88,8 @@ struct mat2D {
 
 struct mat2DC {
     cuDoubleComplex * d;
-    int x; // 1st dim size
-    int y; // 2nd dim size
+    int x;
+    int y;
     int t;
     int s;
 };
@@ -121,11 +139,7 @@ mat2D new_mat2D(int xsize, int ysize) {
     thismat.y = ysize;
     thismat.t = xsize*ysize;
     thismat.s = sizeof(double);
-    cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed allocating matrix on GPU\n");
-        exit(EXIT_FAILURE);
-    }
+    cudaErrChk(cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s)));
     return thismat;
 }
 
@@ -135,11 +149,7 @@ mat2DC new_mat2DC(int xsize, int ysize) {
     thismat.y = ysize;
     thismat.t = xsize*ysize;
     thismat.s = sizeof(cuDoubleComplex);
-    cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed allocating matrix on GPU\n");
-        exit(EXIT_FAILURE);
-    }
+    cudaErrChk(cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s)));
     return thismat;
 }
 
@@ -150,11 +160,7 @@ mat3D new_mat3D(int xsize, int ysize, int zsize) {
     thismat.z = zsize;
     thismat.t = xsize*ysize*zsize;
     thismat.s = sizeof(double);
-    cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed allocating matrix on GPU\n");
-        exit(EXIT_FAILURE);
-    }
+    cudaErrChk(cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s)));
     return thismat;
 }
 
@@ -165,11 +171,7 @@ mat3DC new_mat3DC(int xsize, int ysize, int zsize) {
     thismat.z = zsize;
     thismat.t = xsize*ysize*zsize;
     thismat.s = sizeof(cuDoubleComplex);
-    cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed allocating matrix on GPU\n");
-        exit(EXIT_FAILURE);
-    }
+    cudaErrChk(cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s)));
     return thismat;
 }
 
@@ -181,11 +183,7 @@ mat4D new_mat4D(int xsize, int ysize, int zsize, int wsize) {
     thismat.w = wsize;
     thismat.t = xsize*ysize*zsize*wsize;
     thismat.s = sizeof(double);
-    cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed allocating matrix on GPU\n");
-        exit(EXIT_FAILURE);
-    }
+    cudaErrChk(cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s)));
     return thismat;
 }
 
@@ -197,35 +195,88 @@ mat4DC new_mat4DC(int xsize, int ysize, int zsize, int wsize) {
     thismat.w = wsize;
     thismat.t = xsize*ysize*zsize*wsize;
     thismat.s = sizeof(cuDoubleComplex);
-    cudaError_t err = cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s));
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed allocating matrix on GPU\n");
-        exit(EXIT_FAILURE);
-    }
+    cudaErrChk(cudaMalloc((void**)&(thismat.d), (thismat.t)*(thismat.s)));
     return thismat;
 }
 
 // matrix duplicate functions
 mat3D copy_mat3D(mat3D in) {
     mat3D thismat = new_mat3D(in.x, in.y, in.z);
-    cudaError_t err = cudaMemcpy(thismat.d, in.d, in.t*in.s, cudaMemcpyDeviceToDevice);
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed duplicating matrix on GPU\n");
-        exit(EXIT_FAILURE);
-    }
+    cudaErrChk(cudaMemcpy(thismat.d, in.d, in.t*in.s, cudaMemcpyDeviceToDevice));
     return thismat;
 }
 
 mat3DC copy_mat3DC(mat3DC in) {
     mat3DC thismat = new_mat3DC(in.x, in.y, in.z);
-    cudaError_t err = cudaMemcpy(thismat.d, in.d, in.t*in.s, cudaMemcpyDeviceToDevice);
-    if (err != cudaSuccess) {
-        fprintf(stderr, "Failed duplicating matrix on GPU\n");
-        exit(EXIT_FAILURE);
-    }
+    cudaErrChk(cudaMemcpy(thismat.d, in.d, in.t*in.s, cudaMemcpyDeviceToDevice));
     return thismat;
 }
 
+// matrix print functions
+void print2Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int frow, int fcol)
+{
+	double real_part;
+	double imag_part;
+	int i, j;
+	mat2D *matR;
+	mat2DC *matC;
+
+	if(iscomplex) {
+		matC = (mat2DC*) matrix;
+		for(i = srow; i < frow; i++)
+			for(j = scol; j < fcol; j++) {
+				real_part = cuCreal(matC->d[I2D(i, j, matC->y)]);
+				imag_part = cuCimag(matC->d[I2D(i, j, matC->y)]);
+				printf("%f + i*%f ", real_part, imag_part);
+			}
+				
+	} else {
+		matR = (mat2D*) matrix;
+		for(i = srow; i < frow; i++)
+			for(j = scol; j < fcol; j++)
+				printf("%f ", matR->d[I2D(i, j, matR->y)]);
+	}
+}
+
+/*
+void print3Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int sslice, int frow, int fcol, int fslice)
+{
+	double real_part;
+	double imag_part;
+	int i, j;
+	mat2D *matR;
+	mat2DC *matC;
+
+	if(iscomplex) {
+		matC = (mat2DC*) matrix;
+		for(i = tlrow; i < brrow; i++)
+			for(j = tlcol; j < brcol; j++) {
+				real_part = cuCreal(matC->d[I2D(i, j, matC->y)]);
+				imag_part = cuCimag(matC->d[I2D(i, j, matC->y)]);
+				printf("%f + i*%f ", real_part, imag_part);
+			}
+				
+	} else {
+		matR = (mat2D*) matrix;
+		for(i = tlrow; i < brrow; i++)
+			for(j = tlcol; j < brcol; j++)
+				printf("%f ", matR->d[I2D(i, j, matR->y)]);
+	}
+}
+*/
+
+void printcol_mat3DC(mat3DC mat, int col, int slice) {
+    int i;
+    cuDoubleComplex elem;
+    cuDoubleComplex * mat_cpu = (cuDoubleComplex *)malloc(mat.s*mat.t);
+    cudaErrChk(cudaMemcpy(mat_cpu, mat.d, mat.s*mat.t, cudaMemcpyDeviceToHost));
+    for(i = 0; i < mat.x; i++) {
+        elem = mat_cpu[I3D(i, col, slice, mat.x, mat.y)];
+        printf("%f + %fi\n", cuCreal(elem), cuCimag(elem));
+    }
+}
+
+    
 /*
 struct paraxm_type { // ARE THESE THE RIGHT TYPES?
     cuDoubleComplex * E; // MCNUFFT
@@ -478,83 +529,14 @@ mat3DC CSL1NlCg(mat3DC x0, param_type param) {
 */
 
 
-__global__ void elementWiseMultBySqrt(cuDoubleComplex* kdata, double* w) {
-    // Definitely not ideal. Is it bad to only use one thread per block?
-    // Also we should only have to compute the squares of the elements of w
+__global__ void elementWiseMultBySqrt(cuDoubleComplex * kdata, double * w) {
+    // We should only have to compute the squares of the elements of w
     // one time and use the result for all slices of kdata
-    int i = blockIdx.x + (blockDim.x * blockIdx.y) + (blockDim.x * blockDim.y * threadIdx.x);
-    int j = blockIdx.x + (blockDim.x * blockIdx.y);
-    cuDoubleComplex sqrtofelement = make_cuDoubleComplex(sqrt(w[j]), 0);
+    int i = threadIdx.x * blockIdx.x;
+    int j = blockIdx.y;
+    cuDoubleComplex sqrtofelement = make_cuDoubleComplex(sqrt(w[i]), 0);
     // possible overflow error with cuCmul (see cuComplex.h)
-    kdata[i] = cuCmul(kdata[i], sqrtofelement); // WARNING
-}
-
-void print2Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int frow, int fcol)
-{
-	double real_part;
-	double imag_part;
-	int i, j;
-	mat2D *matR;
-	mat2DC *matC;
-
-	if(iscomplex) {
-		matC = (mat2DC*) matrix;
-		for(i = srow; i < frow; i++)
-			for(j = scol; j < fcol; j++) {
-				real_part = cuCreal(matC->d[I2D(i, j, matC->y)]);
-				imag_part = cuCimag(matC->d[I2D(i, j, matC->y)]);
-				printf("%f + i*%f ", real_part, imag_part);
-			}
-
-	} else {
-		matR = (mat2D*) matrix;
-		for(i = srow; i < frow; i++)
-			for(j = scol; j < fcol; j++)
-				printf("%f ", matR->d[I2D(i, j, matR->y)]);
-	}
-}
-
-/*
-void print3Dmatrix(void *matrix, int dim, int iscomplex, int srow, int scol, int sslice, int frow, int fcol, int fslice)
-{
-	double real_part;
-	double imag_part;
-	int i, j;
-	mat2D *matR;
-	mat2DC *matC;
-
-	if(iscomplex) {
-		matC = (mat3DC*) matrix;
-		for(i = tlrow; i < brrow; i++)
-			for(j = tlcol; j < brcol; j++) {
-				real_part = cuCreal(matC->d[I2D(i, j, matC->y)]);
-				imag_part = cuCimag(matC->d[I2D(i, j, matC->y)]);
-				printf("%f + i*%f ", real_part, imag_part);
-			}
-
-	} else {
-		matR = (mat3D*) matrix;
-		for(i = tlrow; i < brrow; i++)
-			for(j = tlcol; j < brcol; j++)
-				printf("%f ", matR->d[I2D(i, j, matR->y)]);
-	}
-}
-*/
-
-void printcol_mat3DC(mat3DC mat, int col, int slice) {
-    int i=0;
-    cuDoubleComplex elem;
-    cuDoubleComplex * mat_cpu = (cuDoubleComplex *)malloc(mat.s*mat.t);
-    cudaError_t cudaStat;
-    cudaStat = cudaMemcpy(mat_cpu, mat.d, mat.s*mat.t, cudaMemcpyDeviceToHost);
-    if (cudaStat != cudaSuccess) {
-        fprintf(stderr, "Print failure\n");
-        exit(EXIT_FAILURE);
-    }
-    for(i = 0; i < mat.x; i++) {
-        elem = mat_cpu[I3D(i, col, slice, mat.x, mat.y)];
-        printf("%f + %fi\n", cuCreal(elem), cuCimag(elem));
-    }
+    kdata[j] = cuCmul(kdata[j], sqrtofelement); // WARNING
 }
 
 
@@ -564,40 +546,32 @@ int main(int argc,char **argv) {
     int ntviews = 600;
     int nc = 12;
 
-    int i, j, l, m; // general loop indices (skipped k due to conflict)
-    cudaError_t cudaStat; // cuda error variable
-    cublasStatus_t stat; // CUBLAS error variable
+    // GPU block and grid dimensions
+    int bt = 512; // max threads per block total
+    int bx = 512; // max threads per block x direction
+    int by = 512; // max threads per block y direction
+    int bz = 64; // max threads per block z direction
+    int gx = 65535;
+    int gy = 65535;
+    int gz = 65535;
+    
+    int i, j, l, m; // general loop indices (skipped k)
+
     cublasHandle_t handle; // handle to CUBLAS context
 
-    // %%%%%% define number of spokes to be used per frame (Fibonacci number)
+    cudaErrChk(cudaSetDevice(0));
+
+    //  number of spokes to be used per frame (Fibonacci number)
     int nspokes = 21;
 
     // %%%%%% load radial data
-    // open matrix files and metadata
+    // open matrix files
     // these were pulled from liver_data.mat by convertmat
     FILE * meta_file = fopen("./liver_data/metadata", "rb");
     FILE * b1_file = fopen("./liver_data/b1.matrix", "rb");
     FILE * k_file = fopen("./liver_data/k.matrix", "rb");
     FILE * kdata_file = fopen("./liver_data/kdata.matrix", "rb");
     FILE * w_file = fopen("./liver_data/w.matrix", "rb");
-
-/*  This section was superceded by the constant data size defined above,
-    and the use of matrix structs and constructors
-    // load metadata
-    size_t dims[3];
-    fread(dims, sizeof(size_t), 3, meta_file);
-
-    // %%%%% data dimensions
-    //int nx = dims[0];
-    //int ntviews = dims[1];
-    //int nc = dims[2];
-
-    // set array total lengths
-    //int b1_total = nx/2 * nx/2 * nc;
-    //int k_total = nx * ntviews;
-    //int kdata_total = nx * ntviews * nc;
-    //int w_total = nx * ntviews;
-*/
 
     // temporarily allocate and load b1, k, kdata, and w on CPU
     cuDoubleComplex * b1_cpu = (cuDoubleComplex *)malloc((nx/2)*(nx/2)*nc * sizeof(cuDoubleComplex));
@@ -609,72 +583,39 @@ int main(int argc,char **argv) {
     double * w_cpu = (double *)malloc(nx*ntviews * sizeof(double));
     fread(w_cpu, sizeof(double), nx*ntviews, w_file);
 
-    //printf("%f\n", cuCreal(b1_cpu[147456]));
-
     // allocate b1, k, kdata, w on GPU
     mat3DC b1 = new_mat3DC(nx/2, nx/2, nc);
     mat2DC k = new_mat2DC(nx, ntviews);
     mat3DC kdata = new_mat3DC(nx, ntviews, nc);
     mat2D w = new_mat2D(nx, ntviews);
-
-    /* (replaced by matrix structs and constructors
-    cuDoubleComplex * b1_d;
-    cuDoubleComplex * k_d;
-    cuDoubleComplex * kdata_d;
-    double * w_d;
-    cudaStat = cudaMalloc((void**)&b1_d, b1_total*sizeof(*b1));
-    cudaStat = cudaMalloc((void**)&k_d, kdata_total*sizeof(*k));
-    cudaStat = cudaMalloc((void**)&kdata_d, kdata_total*sizeof(*kdata));
-    cudaStat = cudaMalloc((void**)&w_d, w_total*sizeof(*w));
-    if (cudaStat != cudaSuccess |
-        cudaStat != cudasuccess |
-        cudaStat != cudaSuccess |
-        cudaStat != cudaSuccess) {
-        printf ("device memory allocation failed");
-        return EXIT_FAILURE;
-    }*/
-
+   
     // copy data from CPU to GPU
-    cudaStat = cudaMemcpy(b1.d, b1_cpu, b1.s*b1.t, cudaMemcpyHostToDevice);
-    if (cudaStat == cudaSuccess) {
-        cudaMemcpy(k.d, k_cpu, k.s*k.t, cudaMemcpyHostToDevice);
-    }
-    if (cudaStat == cudaSuccess) {
-        cudaMemcpy(kdata.d, kdata_cpu, kdata.s*kdata.t, cudaMemcpyHostToDevice);
-    }
-    if (cudaStat == cudaSuccess) {
-        cudaMemcpy(w.d, w_cpu, w.s*w.t, cudaMemcpyHostToDevice);
-    }
-    if (cudaStat != cudaSuccess) {
-        fprintf(stderr, "Failed copying data from CPU to GPU\n");
-        exit(EXIT_FAILURE);
-    } else {
-        printf("Copied data from CPU to GPU\n");
-    }
+    cudaErrChk(cudaMemcpy(b1.d, b1_cpu, b1.s*b1.t, cudaMemcpyHostToDevice));
+    cudaErrChk(cudaMemcpy(k.d, k_cpu, k.s*k.t, cudaMemcpyHostToDevice));
+    cudaErrChk(cudaMemcpy(kdata.d, kdata_cpu, kdata.s*kdata.t, cudaMemcpyHostToDevice));
+    cudaErrChk(cudaMemcpy(w.d, w_cpu, w.s*w.t, cudaMemcpyHostToDevice));
 
     // create cuBLAS context
-    stat = cublasCreate(&handle);
-    if (stat != CUBLAS_STATUS_SUCCESS) {
-        printf("CUBLAS initialization failed\n");
-        return EXIT_FAILURE;
-    } else {
-        printf("CUBLAS initialized\n");
-    }
+    cublasErrChk(cublasCreate(&handle));
 
-    // b1=b1/max(abs(b1(:)))
-    // scale b1 by maximum modulus
+    // b1=b1/max({|x|: x entry in b1})
+    // scale entries of b1 so that maximum modulus = 1
     int max_mod_idx;
     cuDoubleComplex max_mod_num;
-    double max_mod;
-    cublasIzamax(handle, b1.t, b1.d, b1.s, &max_mod_idx);
-    cudaMemcpy(&max_mod_num, &(b1.d[max_mod_idx]), b1.s, cudaMemcpyDeviceToHost);
-    max_mod = cuCabs(max_mod_num);
-    cublasZdscal(handle, b1.t, &max_mod, b1.d, b1.s);
+    cublasErrChk(cublasIzamax(handle, b1.t, b1.d, 1, &max_mod_idx));
+    cudaErrChk(cudaMemcpy(&max_mod_num, &(b1.d[max_mod_idx]), b1.s, cudaMemcpyDeviceToHost));
+    const double inv_max_mod = 1/cuCabs(max_mod_num);
+    cublasErrChk(cublasZdscal(handle, b1.t, &inv_max_mod, b1.d, 1));
+
+    // WORKING UP TO HERE
+
 /*
     // for ch=1:nc,kdata(:,:,ch)=kdata(:,:,ch).*sqrt(w);endc
     // i.e. multiply each of the 12 slices of kdata element-wise by sqrt(w)
-    dim3 numBlocks(nx, ntviews);
-    elementWiseMultBySqrt<<<numBlocks, nc>>>(kdata.d, w.d);
+    dim3 numBlocks((kdata.x*kdata.y)/bt, kdata.z);
+    elementWiseMultBySqrt<<<numBlocks, bt>>>(kdata.d, w.d);
+
+    printcol_mat3DC(kdata, 0, 0); 
 
     // %%%%% number of frames
     int nt = ntviews/nspokes; // floor is implicit

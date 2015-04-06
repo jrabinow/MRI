@@ -15,13 +15,13 @@ $(BINARY): grasp.cu
 .SUFFIXES: .cu
 
 .cu: CC=nvcc
-.cu:
-	$(CC) -c $^
+#.cu:
+#	$(CC) -c $^
 
-depend:
-	$(CC) $(CFLAGS) -M *.c > .depend
+#depend:
+#	$(CC) $(CFLAGS) -M *.c > .depend
 
--include .depend
+#-include .depend
 
 .PHONY: clean distclean depend
 
