@@ -20,8 +20,8 @@ debug: CFLAGS += -g -DDEBUG
 debug: depend $(BINARY)
 
 # removed gpuNUFFT prerequisite to prevent building at each compilation
-$(BINARY): gpuNUFFT $(SRCFILES)
-#$(BINARY): $(SRCFILES)
+#$(BINARY): gpuNUFFT $(SRCFILES)
+$(BINARY): $(SRCFILES)
 	$(CC) $(CFLAGS) $(LDFLAGS) -lgpuNUFFT_f -lgpuNUFFT_ATM_f -L$(gpuNUFFT_DIR)/bin/ $(SRCFILES) -o $@
 
 #copy_files:
