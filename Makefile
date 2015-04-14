@@ -11,6 +11,7 @@ gpuNUFFT_FILES=libgpuNUFFT_f.so libgpuNUFFT_ATM_f.so
 DOWNLOAD=$(shell which wget)
 EXTRACT=$(shell which unzip) -ou
 CP=$(shell which cp) -f
+RM=$(shell which rm) --verbose --force
 
 
 all: CFLAGS += -O3
@@ -47,11 +48,14 @@ download:
 
 #-include .depend
 
-.PHONY: clean distclean depend unzip download build_gpuNUFFT gpuNUFFT
+.PHONY: clean distclean gpuNUFFTclean depend unzip download build_gpuNUFFT gpuNUFFT
 
 clean:
 	$(RM) *.o $(gpuNUFFT_FILES)
 
 distclean: clean
 	$(RM) $(BINARY)
+
+gpuNUFFTclean:
+	$(RM) -r $(gpuNUFFT_DIR)/build/CMake*
 
