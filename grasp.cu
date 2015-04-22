@@ -21,16 +21,19 @@
 #include "multicoilGpuNUFFT.hpp" // multicoil nonuniform FFT operator
 
 /* CORRECT LINKING DEMO */
-#include <cuda_utils.hpp>
+//#include <cuda_utils.hpp>
   
-/*
+
 typedef struct {
-    cuDoubleComplex * y; // kdatau
-    double lambda; // trade off control TODO: between what?
-    double l1Smooth; // TODO: find out what this does
-    int nite = 8; // TODO: find out what this does
-} param_t;
-*/
+	matrixC * read; // k space readings
+	int num_spokes; // spokes per frame
+	int num_frames; // frames in data
+	double lambda; // trade off control TODO: between what?
+	double l1Smooth; // TODO: find out what this does
+	int num_iter; // number of iterations of the reconstruction
+	cublasHandle_t handle; // handle to CUBLAS context	
+} param_type;
+
 
 #if 0
 __global__ void elementWiseMultBySqrt(cuDoubleComplex * kdata, double * w) {
@@ -42,233 +45,299 @@ __global__ void elementWiseMultBySqrt(cuDoubleComplex * kdata, double * w) {
     // possible overflow error with cuCmul (see cuComplex.h)
     kdata[j] = cuCmul(kdata[j], sqrtofelement); // WARNING
 }
+
 #endif
 
-int main(int argc,char **argv) {
-    // Data size (determines gpu optimization, so don't change lightly!)
-    int nx = 768;
-    int ntviews = 600;
-    int nc = 12;
-
-#if 0
-
-    /* CORRECT LINKING DEMO */
-    bindTo1DTexture("symbol", NULL, 0);
-
-    // GPU block and grid dimensions
-    int bt = 512; // max threads per block total
-    int bx = 512; // max threads per block x direction
-    int by = 512; // max threads per block y direction
-    int bz = 64; // max threads per block z direction
-    int gx = 65535;
-    int gy = 65535;
-    int gz = 65535;
-    
-    int i, j, l, m; // general loop indices (skipped k)
-
-    cublasHandle_t handle; // handle to CUBLAS context
-
-    cudaErrChk(cudaSetDevice(0));
-
-    //  number of spokes to be used per frame (Fibonacci number)
-    int nspokes = 21;
-
-    // %%%%%% load radial data
-    // open matrix files
-    // these were pulled from liver_data.mat by convertmat
-    FILE * meta_file = fopen("./liver_data/metadata", "rb");
-    FILE * b1_file = fopen("./liver_data/b1.matrix", "rb");
-    FILE * k_file = fopen("./liver_data/k.matrix", "rb");
-    FILE * kdata_file = fopen("./liver_data/kdata.matrix", "rb");
-    FILE * w_file = fopen("./liver_data/w.matrix", "rb");
-
-    // temporarily allocate and load b1, k, kdata, and w on CPU
-    cuDoubleComplex * b1_cpu = (cuDoubleComplex *)malloc((nx/2)*(nx/2)*nc * sizeof(cuDoubleComplex));
-    fread(b1_cpu, sizeof(cuDoubleComplex), (nx/2)*(nx/2)*nc, b1_file);
-    cuDoubleComplex * k_cpu = (cuDoubleComplex *)malloc(nx*ntviews * sizeof(cuDoubleComplex));
-    fread(k_cpu, sizeof(cuDoubleComplex), nx*ntviews, k_file);
-    cuDoubleComplex * kdata_cpu = (cuDoubleComplex *)malloc(nx*ntviews*nc * sizeof(cuDoubleComplex));
-    fread(kdata_cpu, sizeof(cuDoubleComplex), nx*ntviews*nc, kdata_file);
-    double * w_cpu = (double *)malloc(nx*ntviews * sizeof(double));
-    fread(w_cpu, sizeof(double), nx*ntviews, w_file);
-
-    // allocate b1, k, kdata, w on GPU
-    mat3DC b1 = new_mat3DC(nx/2, nx/2, nc);
-    mat2DC k = new_mat2DC(nx, ntviews);
-    mat3DC kdata = new_mat3DC(nx, ntviews, nc);
-    mat2D w = new_mat2D(nx, ntviews);
-   
-    // copy data from CPU to GPU
-    cudaErrChk(cudaMemcpy(b1.d, b1_cpu, b1.s*b1.t, cudaMemcpyHostToDevice));
-    cudaErrChk(cudaMemcpy(k.d, k_cpu, k.s*k.t, cudaMemcpyHostToDevice));
-    cudaErrChk(cudaMemcpy(kdata.d, kdata_cpu, kdata.s*kdata.t, cudaMemcpyHostToDevice));
-    cudaErrChk(cudaMemcpy(w.d, w_cpu, w.s*w.t, cudaMemcpyHostToDevice));
-
-    // create cuBLAS context
-    cublasErrChk(cublasCreate(&handle));
-
-    // b1=b1/max({|x|: x entry in b1})
-    // scale entries of b1 so that maximum modulus = 1
-    int max_mod_idx;
-    cuDoubleComplex max_mod_num;
-    cublasErrChk(cublasIzamax(handle, b1.t, b1.d, 1, &max_mod_idx));
-    cudaErrChk(cudaMemcpy(&max_mod_num, &(b1.d[max_mod_idx]), b1.s, cudaMemcpyDeviceToHost));
-    const double inv_max_mod = 1/cuCabs(max_mod_num);
-    cublasErrChk(cublasZdscal(handle, b1.t, &inv_max_mod, b1.d, 1));
-
-    // WORKING UP TO HERE
-
 /*
-    // for ch=1:nc,kdata(:,:,ch)=kdata(:,:,ch).*sqrt(w);endc
-    // i.e. multiply each of the 12 slices of kdata element-wise by sqrt(w)
-    dim3 numBlocks((kdata.x*kdata.y)/bt, kdata.z);
-    elementWiseMultBySqrt<<<numBlocks, bt>>>(kdata.d, w.d);
+ * l1norm
+ */
 
-    printcol_mat3DC(kdata, 0, 0); 
+void l1norm(matrixC * traj,
+		matrixC * sens,
+		matrixC * read,
+		matrix * comp,
+		param_type * param) {
 
-    // %%%%% number of frames
-    int nt = ntviews/nspokes; // floor is implicit
-*/
-/*
-    // I THINK THE FOLLOWING SECTION REPLACES THIS
-    // %%%%% crop the data according to the number of spokes per frame
-    // we're basically setting ntviews = nt*nspokes
-    // kdata=kdata(:,1:nt*nspokes,:)
-    // looping column first due to column major storage
-    for (k = 0; k < nc; k++) {
-        for (i = 0; i < nx; i++ {
-            for (j = 0; j < nt*nspokes; j++) {
-                kdata_d[I3D(i,j,k,nx,nt*nspokes)] = kdata_d[I3D(i,j,k,nx,ntviews)];
-            }
-         }
-    }
-    // k=k(:,1:nt*nspokes)
-    for (i = 0; i < nx; i++ {
-        for (j = 0; j < nt*nspokes; j++) {
-            k_d[I2D(i,j,nt*nspokes)] = k_d[I2D(i,j,ntviews)];
-        }
-    }
-    // w=w(:,1:nt*nspokes);
-    for (i = 0; i < nx; i++ {
-        for (j = 0; j < nt*nspokes; j++) {
-            w_d[I2D(i,j,nt*nspokes)] = w_d[I2D(i,j,ntviews)];
-        }
-    }
-*/
-/*
-    // %%%%% sort the data into a time-series
-    // sort kdata, k, and w into time series kdatau, ku, and wu
-    // by splitting columns into nt frames of nspokes columns each
-    // then index the frames by an added 4th dimension
-    // data is cropped in the process (i.e. some columns might not be used)
-    // DON'T REMEMBER IF I DID THIS RIGHT
-    mat4DC kdatau = new_mat4DC(nx, nspokes, nc, nt);
-    mat3DC ku = new_mat3DC(nx, nspokes, nt);
-    mat3D wu = new_mat3D(nx, nspokes, nt);
-    for (m = 0; m < nt; m++) {
-        for (l = 0; l < nc; l++) {
-            for (i = 0; i < nx; i++ {
-                for (j = 0; j < nspokes; j++) {
-                    kdatau.d[I4D(i,j,l,m,nx,nspokes,nc)] = kdata.d[I3D(i,j*m,l,nx,ntviews)];
-                }
-             }
-        }
-    }
-    for (l = 0; l < nt; l++) {
-        for (i = 0; i < nx; i++ {
-            for (j = 0; j < nspokes; j++) {
-                ku.d[I3D(i,j,l,nx,nspokes)] = k.d[I2D(i,j*l,ntviews)];
-            }
-        }
-    }
-    for (l = 0; l < nt; l++) {
-        for (i = 0; i < nx; i++ {
-            for (j = 0; j < nspokes; j++) {
-                wu.d[I3D(i,j,l,nx,nspokes)] = w.d[I2D(i,j*l,ntviews)];
-            }
-        }
-    }
-*/
-/*
-    // %%%%% multicoil NUFFT operator
-    param.E=MCNUFFT(ku,wu,b1);
-*/
-/*
-    // %%%%% undersampled data
-    param.y=kdatau;
-    // clear kdata kdatau k ku wu w
-*/
-/*
-    // %%%%% nufft recon
-    // ' := conjugate transpose; * := matrix multiplication
-    // ' and * are overloaded, defined in @MCNUFFT
-    // what's the order of operations, or does it matter?
-    mat3DC recon_nufft=param.E'*param.y;
-*/
-/*
-    // %%%%% parameters for reconstruction
-    param_type param;
-    // param.W = TV_Temp(); (use TV_Temp kernel)
-    //param.lambda = 0.25*max(abs(recon_nufft(:)));
-    stat = cublasIZamax(handle, b1_total, b1_d, sizeof(cuDoubleComplex), &max_modulus_index);
-    const double max_modulus = cuCabs(b1[max_modulus_index]); // cuCabs defined in cuComplex.h
-    param.nite = 8;
-    param.display = 1;
-*/
-    // fprintf('\n GRASP reconstruction \n')
+	print_matrixC(traj, 0, 20);
+	print_matrixC(sens, 0, 20);
+	print_matrixC(read, 0, 20);
+	print_matrix(comp, 0, 20);
 
-    // long starttime = clock_gettime(CLOCK_MONOTONIC, tv_nsec);
-    // mat3DC recon_cs=recon_nufft;
-    // for (i = 0; i < 4; i++) {
-    //     recon_cs = CSL1NlCg(recon_cs,param);
-    // }
-    // long elapsedtime = (clock_gettime(CLOCK_MONOTONIC, tv_nsec) - starttime)/1000000;
-
-    // recon_nufft=flipdim(recon_nufft,1);
-    // recon_cs=flipdim(recon_cs,1);
-
-    // %%%%% display 4 frames
-    // recon_nufft2=recon_nufft(:,:,1);
-    // recon_nufft2=cat(2,recon_nufft2,recon_nufft(:,:,7));
-    // recon_nufft2=cat(2,recon_nufft2,recon_nufft(:,:,13));
-    // recon_nufft2=cat(2,recon_nufft2,recon_nufft(:,:,23));
-    // recon_cs2=recon_cs(:,:,1);
-    // recon_cs2=cat(2,recon_cs2,recon_cs(:,:,7));
-    // recon_cs2=cat(2,recon_cs2,recon_cs(:,:,13));
-    // recon_cs2=cat(2,recon_cs2,recon_cs(:,:,23));
-
-
-
-    // figure;
-    // subplot(2,1,1),imshow(abs(recon_nufft2),[]);title('Zero-filled FFT')
-    // subplot(2,1,2),imshow(abs(recon_cs2),[]);title('GRASP')
+}
 
 
 
 /*
-    // get matrix from GPU
-    stat = cublasGetMatrix (M, N, sizeof(*a), devPtrA, M, a, M);
-    if (stat != CUBLAS_STATUS_SUCCESS) {
-        printf ("data upload failed");
-        cudaFree (devPtrA);
-        cublasDestroy(handle);
-        return EXIT_FAILURE;
-    }
+ * Sort data into time series
+ * It'd be cool if this was more general, but for now it's very explicit
+ */
+
+void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type * param) {
+	// Since for traj and comp we're just splitting the last dimensions
+	// we get away with just reindexing the same underlying data,
+	traj->dims[1] = param->num_spokes;
+	traj->dims[2] = param->num_frames;
+	comp->dims[1] = param->num_spokes;
+	comp->dims[2] = param->num_frames;
+
+	// But read requires reordering the data
+
+	size_t read_ts_dims[MAX_DIMS] = { read->dims[0],
+			param->num_spokes,
+			read->dims[2],
+			param->num_frames };
+	matrixC * read_ts = new_matrixC(read_ts_dims, host);
+	// loop over the first entries of the columns of read
+	size_t * read_coord;
+	size_t read_ts_coord[MAX_DIMS];
+	size_t read_ts_idx;
+	for (size_t i = 0; i < read->num; i += read->dims[0]) {
+		// convert read index to read coordinate
+		read_coord = I2C(i, read->dims);
+		// apply slicing operations
+		read_ts_coord[0] = read_coord[0];
+		read_ts_coord[1] = read_coord[1] % param->num_spokes;
+		read_ts_coord[2] = read_coord[2];
+		read_ts_coord[3] = read_coord[3] / param->num_spokes;
+		// convert read time series coordinate to index
+		read_ts_idx = C2I(read_ts_coord, read_ts->dims);
+		// copy column
+		memcpy(&(read_ts->data[read_ts_idx]),
+				&(read->data[i]),
+				read->dims[0]*read->size);
+	}
+	// reassign read pointer to time series and free old data
+	free_matrixC(read);
+	read = read_ts;
+}
+
+
+/*
+ * Normalize a complex matrix on host in place so maximum modulus is 1
+ * This is "normalize" as in peak normalization in audio
+ * and video processing, not like in linear algebra. In the
+ * former we uniformly scale entries so that the greatest
+ * entry equals some value (in this case 1). In the latter
+ * we uniformly scale entries so that *the norm* of the
+ * matrix--treated as a vector--equals 1 (and always 1)
+ * 
+ */
+
+void normalize(matrixC * mat) {
+	// Make sure we get a host matrix
+	if (mat->location == device) {
+		printf("Error: normalize only for host matrices\n");
+	}
+
+	// Find maximum modulus
+	double max_mod = 0;
+	for (size_t i = 0; i < mat->num; i++) {
+		if (cuCabs(mat->data[i]) > max_mod) {
+			max_mod = cuCabs(mat->data[i]);
+		}
+	}
+
+	// Scale entries by maximum modulus
+	for (size_t i = 0; i < mat->num; i++) {
+		mat->data[i] = cuCdiv(mat->data[i], make_cuDoubleComplex(max_mod, 0.0));
+	}
+
+	/*
+
+	This is (probably nonworking) parallel version, but since it's only run once
+	it's probably not worth it to transfer to device and back
+
+	// sens=sens/max({|x|: x entry in sens})
+	// scale entries of sens so that maximum modulus = 1
+	size_t max_mod_idx;
+	cuDoubleComplex max_mod_num;
+	cublasErrChk(cublasIzamax(param->handle, mat->num, mat->data, 1, &max_mod_idx));
+	cudaErrChk(cudaMemcpy(&max_mod_num,
+			&(mat->data[max_mod_idx]),
+			mat->size, cudaMemcpyDeviceToHost));
+	const double inv_max_mod = 1/cuCabs(max_mod_num);
+	cublasErrChk(cublasZdscal(handle, b1.t, &inv_max_mod, b1.d, 1));
+
+	*/
+}
+
+
+
+
+/*
+* Load data from file and save to array structs
+* (in this case the data is from a matlab .mat file read by a custom
+* script "convertmat.c" using the matio library
+* and then directly written to files by fwrite)
 */
 
-    // free GPU memory
-    cudaFree(b1.d);
-    cudaFree(k.d);
-    cudaFree(kdata.d);
-    cudaFree(w.d);
+void load_data(matrixC ** traj,
+		matrixC ** sens,
+		matrixC ** read,
+		matrix ** comp,
+		param_type * param) {
 
-    // destroy cuBLAS context
-    cublasDestroy(handle);
+	// Input data size (based on the k space readings matrix)
+	// 1st dim: number of samples per reading per coil
+	// 2nd dim: number of readings
+	// 3rd dim: number of coils
+	// TODO: should these be constants?
+	size_t dims[MAX_DIMS] = {768, 600, 12};
 
-    // free CPU memory
-    free(b1_cpu);
-    free(k_cpu);
-    free(kdata_cpu);
-    free(w_cpu);
-#endif
+	// Make auxillary matrix data sizes
+	size_t dims_sens[MAX_DIMS] = {dims[0] / 2, dims[0] / 2, dims[2]};
+	size_t dims_no_coils[MAX_DIMS] = {dims[0], dims[1]};
+
+	// allocate matrices on host
+	*traj = new_matrixC(dims_no_coils, host);
+	*sens = new_matrixC(dims_sens, host);
+	*read = new_matrixC(dims, host);
+	*comp = new_matrix(dims_no_coils, host);
+
+	// open matrix files
+	// these were pulled from liver_data.mat by matio and convertmat
+	//FILE * meta_file = fopen("./liver_data/metadata", "rb");
+	FILE * traj_file = fopen("./liver_data/k.matrix", "rb");
+	FILE * sens_file = fopen("./liver_data/b1.matrix", "rb");
+	FILE * read_file = fopen("./liver_data/kdata.matrix", "rb");
+	FILE * comp_file = fopen("./liver_data/w.matrix", "rb");
+
+	// load matrices onto host
+	fread((*traj)->data, (*traj)->size, (*traj)->num, traj_file);
+	fread((*sens)->data, (*sens)->size, (*sens)->num, sens_file);
+	fread((*read)->data, (*read)->size, (*read)->num, read_file);
+	fread((*comp)->data, (*comp)->size, (*comp)->num, comp_file);
+
+	// copy matrices to device
+	toDeviceC(*traj);
+	toDeviceC(*sens);
+	toDeviceC(*read);
+	toDevice(*comp);	
+}
+
+/* Just preprocessing, no GPU
+ * All the good stuff is in CSL1Nlg()
+ */
+
+int main(int argc, char **argv) {
+
+	// Input data metadata structs (defined in matrix.h)
+	matrixC * traj; // trajectories through k space
+	matrixC * sens; // coil sensitivities
+	matrixC * read; // k space readings
+	matrix * comp; // density compensation
+
+	// Reconstruction parameters
+	param_type * param = (param_type *)malloc(sizeof(param_type));
+	param->num_spokes = 21; // spokes (i.e. readings) per frame (Fibonacci number)
+	param->num_iter = 8; // number of iterations of the reconstruction
+	cublasErrChk(cublasCreate(&(param->handle))); // create cuBLAS context
+	
+	// Load data
+	load_data(&traj, &sens, &read, &comp, param);
+
+	if (strcmp(argv[1], "l1norm")) {
+		l1norm(traj, sens, read, comp, param);
+	}
+	
+	// normalize coil sensitivities
+	normalize(sens);
+
+	// multiply readings by density compensation
+	// TODO: write this function
+
+	// crop data so that spokes divide evenly into frames with none left over
+	param->num_frames = read->dims[1] / param->num_spokes;
+	size_t new_dims_read[MAX_DIMS] = {read->dims[0],
+			param->num_frames*param->num_spokes,
+			read->dims[2] };
+	size_t new_dims_no_coils[MAX_DIMS] = { new_dims_read[0],
+			new_dims_read[1] };
+
+	traj = crop_matrixC(traj, new_dims_no_coils);
+	read = crop_matrixC(read, new_dims_read);
+	comp = crop_matrix(comp, new_dims_no_coils);
+
+	// sort into time series
+	// TODO: get this working
+	//make_time_series(&traj, &read, &comp);
+
+	// print matrices
+	printf("\n----K-space trajectories aka traj aka k----\n");
+	print_matrixC(traj, 0, 20);
+	printf("\n----Coil sensitivities aka sens aka b1----\n");
+	print_matrixC(sens, 0, 20);
+	printf("\n----K-space readings aka read aka kdata----\n");
+	print_matrixC(read, 0, 20);
+	printf("\n----Density compensation aka comp aka w----\n");
+	print_matrix(comp, 0, 20);
+	
+	// WORKING UP TO HERE
+
+	/* CORRECT LINKING DEMO */
+	//bindTo1DTexture("symbol", NULL, 0);
+
+	// GPU block and grid dimensions
+	/*
+	int bt = 512; // max threads per block total
+	int bx = 512; // max threads per block x direction
+	int by = 512; // max threads per block y direction
+	int bz = 64; // max threads per block z direction
+	int gx = 65535;
+	int gy = 65535;
+	int gz = 65535;
+	*/
+
+	/*
+	// for ch=1:nc,kdata(:,:,ch)=kdata(:,:,ch).*sqrt(w);endc
+	// i.e. multiply each of the 12 slices of kdata element-wise by sqrt(w)
+	dim3 numBlocks((kdata.x*kdata.y)/bt, kdata.z);
+	elementWiseMultBySqrt<<<numBlocks, bt>>>(kdata.d, w.d);
+	*/
+
+	/*
+	// %%%%% multicoil NUFFT operator
+	param.E=MCNUFFT(ku,wu,b1);
+	*/
+
+	/*
+	// %%%%% undersampled data
+	param.y=kdatau;
+	// clear kdata kdatau k ku wu w
+	*/
+
+	/*
+	// %%%%% nufft recon
+	// ' := conjugate transpose; * := matrix multiplication
+	// ' and * are overloaded, defined in @MCNUFFT
+	// what's the order of operations, or does it matter?
+	mat3DC recon_nufft=param.E'*param.y;
+	*/
+
+	/*
+	//param.lambda = 0.25*max(abs(recon_nufft(:)));
+	*/
+	
+	// fprintf('\n GRASP reconstruction \n')
+
+	// long starttime = clock_gettime(CLOCK_MONOTONIC, tv_nsec);
+	// mat3DC recon_cs=recon_nufft;
+	// for (i = 0; i < 4; i++) {
+	// recon_cs = CSL1NlCg(recon_cs,param);
+	// }
+	// long elapsedtime = (clock_gettime(CLOCK_MONOTONIC, tv_nsec) - starttime)/1000000;
+
+	// recon_nufft=flipdim(recon_nufft,1);
+	// recon_cs=flipdim(recon_cs,1);
+
+
+	// destroy cuBLAS context
+	cublasDestroy(param->handle);
+
+	// free memory
+	free_matrixC(traj);
+	free_matrixC(sens);
+	free_matrixC(read);
+	free_matrix(comp);
+
 }
