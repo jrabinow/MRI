@@ -7,6 +7,8 @@
 /* System headers */
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
 #include <math.h> // for square root
 #include <time.h> // for benchmarking
 #include <complex.h> // for complex double type and operations
@@ -236,7 +238,8 @@ int main(int argc, char **argv) {
 	// Load data
 	load_data(&traj, &sens, &read, &comp, param);
 
-	if (strcmp(argv[1], "l1norm")) {
+	// Emma's l1norm testing function
+	if (false) {
 		l1norm(traj, sens, read, comp, param);
 	}
 	
