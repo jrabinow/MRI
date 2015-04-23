@@ -65,6 +65,7 @@ void l1norm(matrixC * traj,
 	print_matrixC(read, 0, 20);
 	print_matrix(comp, 0, 20);
 
+	exit(EXIT_SUCCESS);
 }
 
 
@@ -343,4 +344,5 @@ int main(int argc, char **argv) {
 	free_matrixC(read);
 	free_matrix(comp);
 
+	return 0;
 }
