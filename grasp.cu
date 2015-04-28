@@ -20,7 +20,7 @@
 #include "matrix.h" // host and device matrix metadata types
 #include "cudaErr.h" // cuda and cublas error handlers
 #include "TVTemp.h" // total variate temporal operator
-#include "multicoilGpuNUFFT.hpp" // multicoil nonuniform FFT operator
+#include "multicoilGpuNUFFT.cpp" // multicoil nonuniform FFT operator
 
 /* CORRECT LINKING DEMO */
 //#include <cuda_utils.hpp>
@@ -84,7 +84,7 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
 	comp->dims[2] = param->num_frames;
 
 	// But read requires reordering the data
-
+	// allocate new matrix read_rs
 	size_t read_ts_dims[MAX_DIMS] = { read->dims[0],
 			param->num_spokes,
 			read->dims[2],
@@ -102,7 +102,7 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
 		read_ts_coord[1] = read_coord[1] % param->num_spokes;
 		read_ts_coord[2] = read_coord[2];
 		read_ts_coord[3] = read_coord[3] / param->num_spokes;
-		// convert read time series coordinate to index
+		// convert read_ts coordinate to read_ts index
 		read_ts_idx = C2I(read_ts_coord, read_ts->dims);
 		// copy column
 		memcpy(&(read_ts->data[read_ts_idx]),
@@ -111,7 +111,7 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
 	}
 	// reassign read pointer to time series and free old data
 	free_matrixC(read);
-	read = read_ts;
+	*read = *read_ts;
 }
 
 
@@ -225,10 +225,10 @@ void load_data(matrixC ** traj,
 int main(int argc, char **argv) {
 
 	// Input data metadata structs (defined in matrix.h)
-	matrixC * traj; // trajectories through k space
-	matrixC * sens; // coil sensitivities
-	matrixC * read; // k space readings
-	matrix * comp; // density compensation
+	matrixC * traj; // trajectories through k space (k)
+	matrixC * sens; // coil sensitivities (b1)
+	matrixC * read; // k space readings (kdata)
+	matrix * comp; // density compensation (w)
 
 	// Reconstruction parameters
 	param_type * param = (param_type *)malloc(sizeof(param_type));
@@ -264,7 +264,21 @@ int main(int argc, char **argv) {
 
 	// sort into time series
 	// TODO: get this working
-	//make_time_series(&traj, &read, &comp);
+	make_time_series(traj, read, comp, param);
+
+	// gpuNUFFT operator
+	if (false) {
+		int kernel_width = 3;
+		int sector_width = 8;
+		double oversample_ratio = 1.25;
+
+		createMulticoilGpuNUFFTOperator(traj,
+				comp,
+				sens,
+				kernel_width,
+				sector_width,
+				oversample_ratio);
+	}
 
 	// print matrices
 	printf("\n----K-space trajectories aka traj aka k----\n");
@@ -342,7 +356,8 @@ int main(int argc, char **argv) {
 	free_matrixC(traj);
 	free_matrixC(sens);
 	free_matrixC(read);
-	free_matrix(comp);
+	// TODO: find out why the following line segfaults
+	//free_matrix(comp);
 
 	return 0;
 }
