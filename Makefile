@@ -1,7 +1,7 @@
 CC=nvcc
 gpuNUFFT_DIR=./gpuNUFFT-2.0.6rc2/CUDA
-CFLAGS= -I$(gpuNUFFT_DIR)/inc
-LDFLAGS=-lcublas
+CFLAGS= -I$(gpuNUFFT_DIR)/inc -L$(gpuNUFFT_DIR)/bin
+LDFLAGS=-lcublas -lgpuNUFFT_f -lgpuNUFFT_ATM_f
 
 
 BINARY=grasp
@@ -17,7 +17,7 @@ RM=$(shell which rm) --verbose --force
 all: CFLAGS += -O3
 all: depend $(BINARY)
 
-debug: CFLAGS += -g
+debug: CFLAGS += -g -G
 debug: depend $(BINARY)
 
 # removed gpuNUFFT prerequisite to prevent building at each compilation
