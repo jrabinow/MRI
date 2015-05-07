@@ -34,7 +34,7 @@ extract: download
 	test -d gpuNUFFT-2.0.6rc2 || $(EXTRACT) gpuNUFFT-2.0.6.zip && $(RM) gpuNUFFT-2.0.6.zip
 
 download:
-	test -f gpuNUFFT-2.0.6.zip || $(DOWNLOAD) 'http://cai2r.net/sites/default/files/software/gpuNUFFT-2.0.6.zip'
+	test -d gpuNUFFT-2.0.6rc2 || test -f gpuNUFFT-2.0.6.zip || $(DOWNLOAD) 'http://cai2r.net/sites/default/files/software/gpuNUFFT-2.0.6.zip'
 
 .SUFFIXES: .cu
 
