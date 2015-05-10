@@ -1,7 +1,7 @@
 CC=nvcc
 gpuNUFFT_DIR=./gpuNUFFT-2.0.6rc2/CUDA
-CFLAGS= -I$(gpuNUFFT_DIR)/inc
-LDFLAGS=-lcublas
+CFLAGS= -I$(gpuNUFFT_DIR)/inc -L$(gpuNUFFT_DIR)/bin
+LDFLAGS=-lcublas -lgpuNUFFT_f -lgpuNUFFT_ATM_f
 
 BINARY=grasp
 SRCFILES=grasp.cu
@@ -14,7 +14,7 @@ CP=$(shell which cp) -f
 all: CFLAGS += -O3
 all: depend $(BINARY)
 
-debug: CFLAGS += -g -DDEBUG
+debug: CFLAGS += -g -G -DDEBUG
 debug: depend $(BINARY)
 
 $(BINARY): gpuNUFFT $(SRCFILES)
