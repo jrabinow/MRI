@@ -1,39 +1,251 @@
 /*
  * Multicoil wrapper for gpuNUFFT
- * Allows the calling of C++ function from C and converts datatypes
  * 
+ * In the matlab version of grasp which uses Jeff Fessler's nufft_toolbox,
+ * each coil in each frame is transformed as a unit,
+ * i.e., num_spokes columns in one coil are treated as one vector.
+ * So, we precompute one nufft for each frame, with our trajectory being
+ * the concatenation of the trajectories for each spoke in that frame.
+ * Then, when the reverse nufft is called we run the precomputed nufft
+ * for each coil in each frame, combining the coils in each frame.
+ *
+ * gpuNUFFT is setup similar to Fessler's nufft_toolbox: we have a
+ * gpuNUFFTOperatorFactory class that does the precomputation step,
+ * producing an operator for some trajectory,
+ * then we can run that operator as many times as we want on data from that trajectory.
+ * TODO:
+ * How to initialize gpuNUFFTOperatorFactory? Have options:
+ * 	useTextures: flag to indicate texture interpolation
+ * 	useGpu: Flag to indicate gpu usage for precomputation
+ * 	balaceWorkload: flag to indicate load balancing
+ * For now, using default of all options true
+ * Which gpuNUFFTOperatorFactory method to use to make operator?
+ * 	createGpuNUFFTOperator
+ * 	loadPrecomputeGpuNUFFTOperator: why can't we just save previous calls
+ * 		in memory?
+ * 	
  */
 
+#include <cuda_runtime.h>
+#include <cuComplex.h>
+#include "matrix.h"
+#include "cudaErr.h"
+#include "gpuNUFFT_operator_factory.hpp"
 
-#include <gpuNUFFT_operator_factory.hpp>
+// A global multidimensional array of pointers to gpuNUFFT operators
+gpuNUFFT::GpuNUFFTOperator *** gpuNUFFTOps;
 
-gpuNUFFTOperatorFactory
-
-
-
-/*
-/* 
-/*
-extern "C" void gpuNUFFTOperatorFactory_wrapper() {
+extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
+		matrix * comp,
+		matrixC * sens,
+		int kernel_width,
+		int sector_width,
+		double oversample_ratio) {
+	
+	// Create operator factory with default constructor:
+	// textures false, balanced false, preprocessing on gpu false
+	// TODO: find optimal settings. Although, this is just for preprocessing
+	// so not very important (grasp measures runtime of reconstruction not
+	// counting preprocessing)
 	gpuNUFFT::GpuNUFFTOperatorFactory factory;
+	
+	// Create array containers to store data for each frame
+	gpuNUFFT::Array<DType> kSpaceTraj;
+	gpuNUFFT::Array<DType> densCompData;
+	gpuNUFFT::Array<DType2> sensData;
+	
+	// Allocate array to store operator pointers
+	for (size_t i = 0; i < traj->dims[2]; i++) {
+		gpuNUFFTOps[i] = (gpuNUFFT::GpuNUFFTOperator **)malloc(
+				sens->dims[2]*sizeof(gpuNUFFT::GpuNUFFTOperator *));
+	}
+
+	// Allocate temporary space for data
+	// This is under the assumption that createGpuNUFFTOperator()
+	// makes a copy of it's input parameters,
+	// so it's okay to change them after each iteration of the
+	// below for loop
+	kSpaceTraj.data = (DType *)malloc(2*traj->num*sizeof(DType));
+	densCompData.data = (DType *)malloc(comp->num*sizeof(DType));
+	sensData.data = (DType2 *)malloc(sens->num*sizeof(DType2));
+	
+	// Cast some arguments
+	const IndType kernelWidth = (IndType)kernel_width;
+	const IndType sectorWidth = (IndType)sector_width;
+	const DType osf = (DType)oversample_ratio;
+
+	// Pull image dimensions from coil sensitivity maps,
+	// casting from size_t to IndType, which is itself
+	// just a typedef of unsigned int
+	// TODO: ensure there's no overflow here
+	gpuNUFFT::Dimensions imgDims;
+	imgDims.width = (IndType)sens->dims[0];
+	imgDims.height = (IndType)sens->dims[1];
+	
+	/* 
+	 * Create operator for each coil in each frame, treating the whole
+	 * frame as one vector.
+	 * This is different from Fessler's nufft_toolbox where the operator
+	 * was made without specifying the coil and so only one operator
+	 * needed for each frame, resused for each coil 
+	 */		
+
+	size_t traj_coord[MAX_DIMS] = { 0, 0, 0 };
+	size_t comp_coord[MAX_DIMS] = { 0, 0, 0 };
+	size_t sens_coord[MAX_DIMS] = { 0, 0, 0 };
+	size_t traj_index;
+	size_t comp_index;
+	size_t sens_index;
+	// for each frame
+	for (size_t i = 0; i < traj->dims[2]; i++) {
+		// set coordinate to start of frame
+		traj_coord[2] = i;
+		comp_coord[2] = i;
+		
+		// Copy and cast trajectories: traj from grasp is an array of
+		// cuDoubleComplex numbers. gpuNUFFT expects interleaved data:
+		// (real(traj[0]), imag(traj[0]), real(traj[1]), imag(traj[1]), etc)
+		// where each entry is of type DType (typedef of float).
+		// We may be able to relate the
+		// underlying data directly, but for
+		// now we allocate new array and explicitly cast each element
+		// Also might need to rescale traj first, since in example
+		// it says gpuNUFFT expects values between -.5 and .5, whereas I
+		// think grasp uses values between 0 and 1
+		for (size_t j = 0; j < traj->dims[0]*traj->dims[1]; j++) {
+			traj_index = C2I(traj_coord, traj->dims) + j; 
+			kSpaceTraj.data[2*j] = (DType)cuCreal(traj->data[traj_index]);
+			kSpaceTraj.data[2*j + 1] = (DType)cuCimag(traj->data[traj_index]);
+		}
+
+		// Cast density compensation: comp from grasp is an array
+		// of doubles. gpuNUFFT expects an array of DType, which is
+		// a typedef of float.
+		// TODO: every column of comp is the same, so it could
+		// be that gpuNUFFT expects just one column
+		// For now, we assume that it's possible to have
+		// different columns
+		// Also we should be taking the square root of this
+		for (size_t j = 0; j < comp->dims[0]*comp->dims[1]; j++) {
+			comp_index = C2I(comp_coord, comp->dims) + j;
+			densCompData.data[j] = (DType)comp->data[comp_index];
+		}
+
+		// for each coil
+		for (size_t j = 0; j < comp->dims[2]; j++) {
+			// set coordinate to start of the coil
+			sens_coord[2] = j;
+
+			// Cast coil sensitivities: sens from grasp is an array
+			// of cuDoubleComplex numbers. gpuNUFFT expects an array of
+			// DType2, which is a typedef of cuda's float2, which (I think)
+			// is a struct with two floats x and y
+			for (size_t k = 0; k < sens->dims[0]*sens->dims[1]; k++) {
+				sens_index = C2I(sens_coord, sens->dims) + k;
+				sensData.data[k].x = (float)cuCreal(sens->data[sens_index]);
+				sensData.data[k].y = (float)cuCimag(sens->data[sens_index]);
+			}
+			
+			// create operator for this frame and this coil
+			gpuNUFFTOps[i][j] = factory.createGpuNUFFTOperator(kSpaceTraj,
+					densCompData,
+					sensData,
+					kernelWidth,
+					sectorWidth,
+					osf,
+					imgDims);
+		}
+		// TODO: free temp data
+	}
 }
-
-	gpuNUFFT::GpuNUFFTOperator *gpuNUFFTOp = factory.createGpuNUFFTOperator(kSpaceData,kernel_width,sector_width,osf,imgDims);
-
-
-gpuNUFFT::GpuNUFFTOperatorFactory factory; 
-gpuNUFFT::GpuNUFFTOperator *gpuNUFFTOp = factory.createGpuNUFFTOperator(kSpaceData,kernel_width,sector_width,osf,imgDims);
-gpuNUFFTOp->performGpuNUFFTAdj(dataArray)
-gpuNUFFTOp->performForwardGpuNUFFT(imgArray)
+		
 
 
 
-/* Questions about using gpuNUFFT
- * --Should 
-/* Relavent gpuNUFFT datatypes:
 
 
-*/
+	/*  multicoil wrapper for createGpuNUFFTOperator()
+ 	 */
+#if 0
+	void createMulticoilGpuNUFFTOperator(matrixC * traj,
+			matrix * comp,
+			matrixC * sens,
+			int kernel_width,
+			int sector_width,
+			double oversample_ratio) {
+				
+		// Create operator factory with default constructor:
+		// textures, balanced, and gpu true
+		gpuNUFFT::GpuNUFFTOperatorFactory factory;
+		
+		// Create array containers to store data for each frame
+		gpuNUFFT::Array<DType> kSpaceTraj;
+		gpuNUFFT::Array<DType> densCompData;
+		gpuNUFFT::Array<DType> sensData;
+		
+		// Allocate temporary space for data
+		// This is under the assumption that createGpuNUFFTOperator()
+		// makes a copy of it's input parameters,
+		// so it's okay to change them after each iteration of the
+		// below for loop
+		kSpaceTraj.data = (DType *)malloc(2*traj->num*sizeof(DType));
+		densCompData.data = (DType *)malloc(comp->num*sizeof(DType));
+		sensData.data = (DType2 *)malloc(sens->num*sizeof(DType2));
+		
+		// Cast arguments
+		const IndType kernelWidth = (IndType)kernel_width;
+		const IndType sectorWidth = (IndType)sector_width;
+		const DType osf = (DType)oversample_ratio;
+
+		// Pull image dimensions from coil sensitivity maps,
+		// casting from size_t to IndType, which is itself
+		// just a typedef of unsigned int
+		gpuNUFFT::Dimensions imgDims;
+		imgDims.width = (IndType)sens->dims[0];
+		imgDims.height = (IndType)sens->dims[1];
+		
+		/* 
+ 		 * Create operator for each frame, treating the whole
+ 		 * frame as one image, concatenating trajectories for each spoke
+		 */		
+
+		for (size_t i = 0; i < traj->dims[3]; i++) {
+
+			// Copy and cast trajectories: traj from grasp is an array of
+			// cuDoubleComplex numbers. gpuNUFFT expects interleaved data:
+			// (real(traj[0]), imag(traj[0]), real(traj[1]), imag(traj[1]), etc)
+			// where each entry is of type DType (typedef of float).
+			// We may be able to relate the
+			// underlying data directly, but for
+			// now we allocate new array and explicitly cast each element
+			// Also might need to rescale traj first, since in example
+			// it says gpuNUFFT expects values between -.5 and .5, whereas I
+			// think grasp uses values between 0 and 1
+			for (size_t i = ; i < traj->num; i++) {
+				kSpaceTraj.data[2*i] = (DType)cuCreal(traj->data[i]);
+				kSpaceTraj.data[2*i + 1] = (DType)cuCimag(traj->data[i+1]);
+			}
+
+			// Cast density compensation: comp from grasp is an array
+			// of doubles. gpuNUFFT expects an array of DType, which is
+			// a typedef of float.
+			for (size_t i = 0; i < comp->num; i++) {
+				densCompData.data[i] = (DType)comp->data[i];
+			}
+
+			// Cast coil sensitivities: sens from grasp is an array
+			// of cuDoubleComplex numbers. gpuNUFFT expects an array of
+			// DType2, which is a typedef of cuda's float2, which (I think)
+			// is a struct with two floats x and y
+			for (size_t i = 0; i < sens->num; i++) {
+				sensData.data[i].x = (float)cuCreal(sens->data[i]);
+				sensData.data[i].y = (float)cuCimag(sens->data[i]);
+			}
+
+			
+
+
+#endif
 
 
 /*
@@ -95,21 +307,5 @@ gpuNUFFTOp->performForwardGpuNUFFT(imgArray)
   free(coords);
   free(gdata);
   delete gpuNUFFTOp;
-
-
-%	om [M,d]	"digital" frequencies in radians
-%	Nd [d]		image dimensions (N1,N2,...,Nd)
-%	Jd [d]		# of neighbors used (in each direction)
-%	Kd [d]		FFT sizes (should be >= N1,N2,...)
-
-%	n_shift [d]	n = 0-n_shift to N-1-n_shift (must be first)
-
-
-
-kSpaceTraj	coordinate array of sample locations
-kernelWidth	interpolation kernel size in grid units
-sectorWidth	sector width
-osf	grid oversampling ratio
-imgDims	image dimensions (problem size) 
 
 */
