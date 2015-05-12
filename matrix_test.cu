@@ -172,6 +172,10 @@ void test_crop_matrixC() {
 
 
 int main(int argc, char **argv) {
+	if(argc != 2) {
+		fprintf(stderr, "Usage: %s ARG\n", argv[0]);
+		exit(1);
+	}
 	if (strcmp(argv[1], "newHostC") == 0) {
 		test_new_matrixC_host();
 	} else if (strcmp(argv[1], "newDeviceC") == 0) {
