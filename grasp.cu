@@ -69,6 +69,64 @@ void l1norm(matrixC * traj,
 }
 
 
+#if 0
+
+
+matrixC * reindex(matrixC * in, ) {
+	// allocate matrix with new dimensions
+	size_t new_dims[MAX_DIMS] = { };
+	matrixC * out = kjlk;
+	
+	// loop over indices of new matrix,
+	// copying old data to new matrix
+	size_t * new_coord;
+	size_t old_coord[MAX_DIMS];
+	for (size_t i = 0; i < out->num; i++) {
+		// convert new index to new coordinate
+		new_coord = I2C(i, new->dims); 
+		// convert new coordinate to old coordinate
+		old_coord
+
+
+
+	// Since for traj and comp we're just splitting the last dimensions
+	// we get away with just reindexing the same underlying data,
+	traj->dims[1] = param->num_spokes;
+	traj->dims[2] = param->num_frames;
+	comp->dims[1] = param->num_spokes;
+	comp->dims[2] = param->num_frames;
+
+	// But read requires reordering the data
+	// allocate new matrix read_ts
+	size_t read_ts_dims[MAX_DIMS] = { read->dims[0],
+			param->num_spokes,
+			read->dims[2],
+			param->num_frames };
+	matrixC * read_ts = new_matrixC(read_ts_dims, host);
+	// loop over the first entries of the columns of read_ts
+	size_t * read_ts_coord;
+	size_t read_coord[MAX_DIMS];
+	size_t read_idx;
+	for (size_t i = 0; i < read_ts->num; i += read_ts->dims[0]) {
+		// convert read_ts index to read_ts coordinate
+		read_ts_coord = I2C(i, read_ts->dims);
+		// find equivalent read coordinate
+		read_coord[0] = read_ts_coord[0];
+		read_coord[1] = read_ts_coord[1] + read_ts_coord[3]*read_ts->dims[1];
+		read_coord[2] = read_ts_coord[2];
+		// convert read coordinate to read index
+		read_idx = C2I(read_coord, read->dims);
+		// copy column
+		memcpy(&(read_ts->data[i]),
+				&(read->data[read_idx]),
+				read->dims[0]*read->size);
+	}
+	// reassign read pointer to time series and free old data
+	free_matrixC(read);
+	*read = *read_ts;
+}
+
+#endif
 
 /*
  * Sort data into time series
@@ -84,35 +142,41 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
 	comp->dims[2] = param->num_frames;
 
 	// But read requires reordering the data
-	// allocate new matrix read_rs
+	// allocate new matrix read_ts
 	size_t read_ts_dims[MAX_DIMS] = { read->dims[0],
 			param->num_spokes,
 			read->dims[2],
 			param->num_frames };
 	matrixC * read_ts = new_matrixC(read_ts_dims, host);
-	// loop over the first entries of the columns of read
-	size_t * read_coord;
-	size_t read_ts_coord[MAX_DIMS];
-	size_t read_ts_idx;
-	for (size_t i = 0; i < read->num; i += read->dims[0]) {
-		// convert read index to read coordinate
-		read_coord = I2C(i, read->dims);
-		// apply slicing operations
-		read_ts_coord[0] = read_coord[0];
-		read_ts_coord[1] = read_coord[1] % param->num_spokes;
-		read_ts_coord[2] = read_coord[2];
-		read_ts_coord[3] = read_coord[3] / param->num_spokes;
-		// convert read_ts coordinate to read_ts index
-		read_ts_idx = C2I(read_ts_coord, read_ts->dims);
+
+	// loop over indices of read_ts
+	size_t * read_ts_coord;
+	size_t read_coord[MAX_DIMS];
+	size_t read_idx;
+	for (size_t i = 0; i < read_ts->num; i++) {
+		// convert read_ts index to read_ts coordinate
+		read_ts_coord = I2C(i, read_ts->dims);
+		// convert read_ts coordinate to read coordinate
+		read_coord[0] = read_ts_coord[0];
+		read_coord[1] = read_ts_coord[1] + read_ts_coord[3]*read_ts->dims[1];
+		read_coord[2] = read_ts_coord[2];
+		// convert read coordinate to read index
+		read_idx = C2I(read_coord, read->dims);
+		// copy entry from read to read_ts
+		read_ts[i] = read[read_idx];
 		// copy column
-		memcpy(&(read_ts->data[read_ts_idx]),
-				&(read->data[i]),
-				read->dims[0]*read->size);
+		//memcpy(&(read_ts->data[i]),
+		//		&(read->data[read_idx]),
+		//		read->dims[0]*read->size);
 	}
 	// reassign read pointer to time series and free old data
-	free_matrixC(read);
+	// we have to make a copy of the pointer to old read so we don't loose
+	// track of it after the assignment
+	matrixC * read_copy = read;
 	*read = *read_ts;
+	free_matrixC(read_copy);
 }
+
 
 
 /*
@@ -248,7 +312,7 @@ int main(int argc, char **argv) {
 	normalize(sens);
 
 	// multiply readings by density compensation
-	// TODO: write this function
+	// TODO (Julien): write this function
 
 	// crop data so that spokes divide evenly into frames with none left over
 	param->num_frames = read->dims[1] / param->num_spokes;
@@ -263,8 +327,8 @@ int main(int argc, char **argv) {
 	comp = crop_matrix(comp, new_dims_no_coils);
 
 	// sort into time series
-	// TODO: get this working
-	make_time_series(traj, read, comp, param);
+	// TODO (Julien): get this working
+	//make_time_series(traj, read, comp, param);
 
 	// gpuNUFFT operator
 	if (false) {
@@ -356,8 +420,7 @@ int main(int argc, char **argv) {
 	free_matrixC(traj);
 	free_matrixC(sens);
 	free_matrixC(read);
-	// TODO: find out why the following line segfaults
-	//free_matrix(comp);
+	free_matrix(comp);
 
 	return 0;
 }
