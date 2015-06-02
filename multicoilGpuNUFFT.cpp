@@ -32,8 +32,12 @@
 #include "cudaErr.h"
 #include "gpuNUFFT_operator_factory.hpp"
 
-// A global multidimensional array of pointers to gpuNUFFT operators
+// A 2 dimensional array of pointers to gpuNUFFT operators,
+// in the form: gpuNUFFTOps[frame][coil]
 gpuNUFFT::GpuNUFFTOperator *** gpuNUFFTOps;
+
+
+/* Initializes an nufft operator for each coil in each frame */
 
 extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 		matrix * comp,
@@ -43,10 +47,12 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 		double oversample_ratio) {
 	
 	// Create operator factory with default constructor:
-	// textures false, balanced false, preprocessing on gpu false
+	//     textures = false
+	//     balanced = false
+	//     preprocessing on gpu = false
 	// TODO: find optimal settings. Although, this is just for preprocessing
 	// so not very important (grasp measures runtime of reconstruction not
-	// counting preprocessing)
+	// including preprocessing)
 	gpuNUFFT::GpuNUFFTOperatorFactory factory;
 	
 	// Create array containers to store data for each frame
@@ -54,10 +60,12 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 	gpuNUFFT::Array<DType> densCompData;
 	gpuNUFFT::Array<DType2> sensData;
 	
-	// Allocate array to store operator pointers
+	// Allocate array of arrays of operator pointers
+	gpuNUFFTOps = (gpuNUFFT::GpuNUFFTOperator ***)
+			malloc(traj->dims[2]*sizeof(gpuNUFFT::GpuNUFFTOperator **));
 	for (size_t i = 0; i < traj->dims[2]; i++) {
-		gpuNUFFTOps[i] = (gpuNUFFT::GpuNUFFTOperator **)malloc(
-				sens->dims[2]*sizeof(gpuNUFFT::GpuNUFFTOperator *));
+		gpuNUFFTOps[i] = (gpuNUFFT::GpuNUFFTOperator **)
+				malloc(comp->dims[2]*sizeof(gpuNUFFT::GpuNUFFTOperator *));
 	}
 
 	// Allocate temporary space for data
@@ -117,7 +125,7 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 			kSpaceTraj.data[2*j] = (DType)cuCreal(traj->data[traj_index]);
 			kSpaceTraj.data[2*j + 1] = (DType)cuCimag(traj->data[traj_index]);
 		}
-
+	
 		// Cast density compensation: comp from grasp is an array
 		// of doubles. gpuNUFFT expects an array of DType, which is
 		// a typedef of float.
@@ -158,10 +166,23 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 		// TODO: free temp data
 	}
 }
+
+
+#if 0
 		
+/* Forward multicoil nufft operation */
 
+matrixC * performMulticoilForwardGpuNUFFT(matrixC * image) {
 
+}
 
+/* Adjoint multicoil nufft operation */
+
+matrixC * performMulticoilGpuNUFFTAdj(matrixC * read) {
+
+}
+
+#endif
 
 
 	/*  multicoil wrapper for createGpuNUFFTOperator()
