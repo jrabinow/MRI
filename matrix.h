@@ -1,14 +1,14 @@
 /*
  * Matrix types
- * 
+ *
  * 1-4 dimensions
  * double or cuDoubleComplex
- * 
+ *
  * Matrices are allocated automatically but must be freed
- * manually with free_matrix or free_matrixC
+ * manually with delete_matrix or delete_matrixC
  *
  * To copy metadata without changing data, use struct assignment:
- *   matrix * mat = new_matrix(dims, host);
+ *   matrix * mat = new_matrix(dims, HOST);
  *   mat2 = mat;
  *
  * TODO: malloc error checking (cuda error checking done)
@@ -23,17 +23,18 @@
 #include <string.h>
 #include <cuComplex.h>
 #include "cudaErr.h"
+#include "utils.h"
 
 #define MAX_DIMS 4
 
 // location flag says where data is stored
-typedef enum { device, host } locationFlag;
+typedef enum { DEVICE, HOST } locationFlag;
 
 /*
  * Internal utility function to change dimensions with size 0 to have size 1
  * oldDims and newDims should be arrays of size MAX_DIMS
  * Basically, all matrices have MAX_DIMS dimensions, but if dimension is
- * size 1 we don't worry about it. This function let's us specify only the
+ * size 1 we don't worry about it. This function lets us specify only the
  * dimensions we need using array initialization, e.g. if MAX_DIMS = 4 then:
  *   size_t dims[MAX_DIMS] = {4, 20}
  * produces the array {4, 20, 0, 0}
@@ -42,14 +43,16 @@ typedef enum { device, host } locationFlag;
  */
 inline void processDims(size_t * newDims, size_t * oldDims) {
 	for (int i = 0; i < MAX_DIMS; i++) {
-		newDims[i] = (oldDims[i] == 0) ? 1 : oldDims[i];
+		newDims[i] = oldDims[i] + 1 - (oldDims[i] != 0);
+		/* equivalent to
+		 * newDims[i] = (oldDims[i] == 0) ? 1 : oldDims[i]; */
 	}
 }
 
 
 /*
  * Inline functions to convert between index and coordinate
- * 
+ *
  * Both use the following:
  *   let dims[MAX_DIMS] be the dimensions of the array
  *   let p[MAX_DIMS] be a point in the array
@@ -96,11 +99,7 @@ inline size_t * I2C(size_t idx, size_t * dims) {
 	return point;
 }
 
-/*
- * 
- * Double Matrix
- *
- */
+/* Double Matrix */
 
 typedef struct {
 	double * data; // the data array
@@ -108,10 +107,20 @@ typedef struct {
 	size_t num; // number of entries
 	size_t size; // size in bytes of each entry
 	size_t dims[MAX_DIMS]; // dimension size array
+#ifdef DEBUG
+	unsigned mat_id;
+#endif
 } matrix;
 
 // constructor
 matrix * new_matrix(size_t * dims, locationFlag location) {
+#ifdef DEBUG
+	static unsigned mat_id = 0;
+	if(dims == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
 	// allocate metadata struct
 	matrix * mat = (matrix *)malloc(sizeof(matrix));
 
@@ -131,38 +140,52 @@ matrix * new_matrix(size_t * dims, locationFlag location) {
 	mat->location = location;
 
 	// allocate data array
-	if (mat->location == host) {
+	if (mat->location == HOST) {
 		mat->data = (double *)malloc(mat->num*mat->size);
-	} else if (mat->location == device) {
+	} else if (mat->location == DEVICE) {
 		cudaErrChk(cudaMalloc((void**)&(mat->data),
 				mat->num*mat->size));
 	} else {
 		// error
 	}
-
+#ifdef DEBUG
+	mat->mat_id = mat_id++;
+#endif
 	return mat;
 }
 
 // deconstructor
-void free_matrix(matrix * in) {
+void delete_matrix(matrix * in) {
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
 	// free data on host or device
-	if (in->location == host) {
+	if (in->location == HOST) {
 		free(in->data);
-	} else if (in->location == device) {
+	} else if (in->location == DEVICE) {
 		cudaFree(in->data);
 	} else {
 		// error
 	}
 	// free metadata on host
 	free(in);
-}	
+}
 
 // copy matrix maintaining location
 matrix * copy(matrix * in) {
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
 	matrix * out = new_matrix(in->dims, in->location);
-	if (in->location == host) {
+	if (in->location == HOST) {
 		memcpy(out->data, in->data, in->num*in->size);
-	} else if (in->location == device) {
+	} else if (in->location == DEVICE) {
 		cudaErrChk(cudaMemcpy(out->data,
 				in->data,
 				in->num*in->size,
@@ -175,32 +198,38 @@ matrix * copy(matrix * in) {
 
 // copy device matrix to host
 matrix * toHost(matrix * in) {
-	matrix * out;
-	if (in->location == device) {
-		out = new_matrix(in->dims, host);
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	matrix * out = NULL;
+	if (in->location == DEVICE) {
+		out = new_matrix(in->dims, HOST);
 		cudaErrChk(cudaMemcpy(out->data,
 				in->data,
 				in->num*in->size,
 				cudaMemcpyDeviceToHost));
-	} else {
-		// error: matrix not on device
-		out = NULL;
 	}
 	return out;
 }
 
 // copy host matrix to device
 matrix * toDevice(matrix * in) {
-	matrix * out;
-	if (in->location == host) {
-		out = new_matrix(in->dims, device);
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	matrix * out = NULL;
+	if (in->location == HOST) {
+		out = new_matrix(in->dims, DEVICE);
 		cudaErrChk(cudaMemcpy(out->data,
 				in->data,
 				in->num*in->size,
 				cudaMemcpyHostToDevice));
-	} else {
-		// error: matrix not on host
-		out = NULL;
 	}
 	return out;
 }
@@ -209,13 +238,20 @@ matrix * toDevice(matrix * in) {
 // Destroys input metadata, might reuse input data
 
 matrix * crop_matrix(matrix * in, size_t * newDims) {
-	matrix * out;
-	
+#ifdef DEBUG
+	if(in == NULL || newDims == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	matrix * out = NULL;
+
 	// check to see if only the last dim is cropped
 	bool onlyLastChanged = true;
 	for (int i = 0; i < MAX_DIMS - 1; i++) {
 		if (in->dims[i] != newDims[i]) {
 			onlyLastChanged = false;
+			break;
 		}
 	}
 
@@ -232,12 +268,13 @@ matrix * crop_matrix(matrix * in, size_t * newDims) {
 		// otherwise, we have to actually rearrange the data
 
 		// create output matrix
-		if (in->location == host) {
-			out = new_matrix(newDims, host);
-		} else if (in->location == device) {
-			out = new_matrix(newDims, device);
+		if (in->location == HOST) {
+			out = new_matrix(newDims, HOST);
+		} else if (in->location == DEVICE) {
+			out = new_matrix(newDims, DEVICE);
 		} else {
 			// error
+			return out;
 		}
 
 		// loop over the beginnings of the columns of the output matrix
@@ -248,13 +285,13 @@ matrix * crop_matrix(matrix * in, size_t * newDims) {
 			// to index relative to input matrix
 			out_coord = I2C(i, out->dims);
 			in_idx = C2I(out_coord, in->dims);
-			
+
 			// copy the desired portion of this column
-			if (in->location == host) {
+			if (in->location == HOST) {
 				memcpy(&(out->data[i]),
 						&(in->data[in_idx]),
 						out->dims[0]*out->size);
-			} else if (in->location == device) {
+			} else if (in->location == DEVICE) {
 				cudaErrChk(cudaMemcpy(&(out->data[i]),
 						&(in->data[in_idx]),
 						out->dims[0],
@@ -264,16 +301,22 @@ matrix * crop_matrix(matrix * in, size_t * newDims) {
 			}
 		}
 		// free input data
-		free_matrix(in);	
+		delete_matrix(in);
 	}
 	return out;
 }
 
 // print matrix from start index to end index
 void print_matrix(matrix * in, size_t start, size_t end) {
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
 	// if matrix is on device, copy it to host
 	bool usingCopy = false;
-	if (in->location == device) {
+	if (in->location == DEVICE) {
 		in = toHost(in);
 		usingCopy = true;
 	}
@@ -286,7 +329,7 @@ void print_matrix(matrix * in, size_t start, size_t end) {
 		coord = I2C(i, in->dims);
 		firstCoord = coord[0];
 		if (firstCoord == 0) {
-			printf("\nColumn %d:\n\n", I2C(i, in->dims)[1]); 
+			printf("\nColumn %d:\n\n", I2C(i, in->dims)[1]);
 		}
 		// print entry
 		printf("%f\n", in->data[i]);
@@ -294,18 +337,14 @@ void print_matrix(matrix * in, size_t start, size_t end) {
 
 	// if we copied to host, free our copy
 	if (usingCopy) {
-		free_matrix(in);
+		delete_matrix(in);
 	}
 }
 
 
 
 
-/*
- *
- * cuDoubleComplex Matrix
- *
- */
+/* cuDoubleComplex Matrix */
 
 typedef struct {
 	cuDoubleComplex * data; // the data array
@@ -313,12 +352,22 @@ typedef struct {
 	size_t num; // number of entries
 	size_t size; // size in bytes of each entry
 	size_t dims[MAX_DIMS]; // dimension size array
+#ifdef DEBUG
+	unsigned mat_id;
+#endif
 } matrixC;
 
 // constructor
 matrixC * new_matrixC(size_t * dims, locationFlag location) {
+#ifdef DEBUG
+	static unsigned mat_id = 0;
+	if(dims == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
 	// allocate metadata struct
-	matrixC * mat = (matrixC *)malloc(sizeof(matrixC));
+	matrixC * mat = (matrixC*) xmalloc(sizeof(matrixC));
 
 	// change dims with size 0 to have size 1
 	// making copy of dims in the process
@@ -336,38 +385,55 @@ matrixC * new_matrixC(size_t * dims, locationFlag location) {
 	mat->location = location;
 
 	// allocate data array
-	if (mat->location == host) {
+	if (mat->location == HOST) {
 		mat->data = (cuDoubleComplex *)malloc(mat->num*mat->size);
-	} else if (mat->location == device) {
+	} else if (mat->location == DEVICE) {
 		cudaErrChk(cudaMalloc((void**)&(mat->data),
 				mat->num*mat->size));
 	} else {
 		// error
 	}
-
+#ifdef DEBUG
+	mat->mat_id = mat_id++;
+#endif
 	return mat;
 }
 
 // deconstructor
-void free_matrixC(matrixC * in) {
+void delete_matrixC(matrixC * in) {
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+	printf("matrix id = %u\n", in->mat_id);
+#endif
+	puts("Hello World!");
 	// free data on host or device
-	if (in->location == host) {
+	if (in->location == HOST) {
 		free(in->data);
-	} else if (in->location == device) {
+	} else if (in->location == DEVICE) {
 		cudaFree(in->data);
 	} else {
 		// error
 	}
 	// free metadata on host
 	free(in);
-}	
+	puts("Gbye World!");
+}
 
 // copy matrix maintaining location
 matrixC * copyC(matrixC * in) {
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
 	matrixC * out = new_matrixC(in->dims, in->location);
-	if (in->location == host) {
+	if (in->location == HOST) {
 		memcpy(out->data, in->data, in->num*in->size);
-	} else if (in->location == device) {
+	} else if (in->location == DEVICE) {
 		cudaErrChk(cudaMemcpy(out->data,
 				in->data,
 				in->num*in->size,
@@ -380,32 +446,38 @@ matrixC * copyC(matrixC * in) {
 
 // copy device matrix to host
 matrixC * toHostC(matrixC * in) {
-	matrixC * out;
-	if (in->location == device) {
-		out = new_matrixC(in->dims, host);
+	matrixC * out = NULL;
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	if (in->location == DEVICE) {
+		out = new_matrixC(in->dims, HOST);
 		cudaErrChk(cudaMemcpy(out->data,
 				in->data,
 				in->num*in->size,
 				cudaMemcpyDeviceToHost));
-	} else {
-		// error: matrix not on device
-		out = NULL;
 	}
 	return out;
 }
 
 // copy host matrix to device
 matrixC * toDeviceC(matrixC * in) {
-	matrixC * out;
-	if (in->location == host) {
-		out = new_matrixC(in->dims, device);
+	matrixC * out = NULL;
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	if (in->location == HOST) {
+		out = new_matrixC(in->dims, DEVICE);
 		cudaErrChk(cudaMemcpy(out->data,
 				in->data,
 				in->num*in->size,
 				cudaMemcpyHostToDevice));
-	} else {
-		// error: matrix not on host
-		out = NULL;
 	}
 	return out;
 }
@@ -414,10 +486,15 @@ matrixC * toDeviceC(matrixC * in) {
 // Destroys input metadata, might reuse input data
 
 matrixC * crop_matrixC(matrixC * in, size_t * newDims) {
-	matrixC * out;
-	
-	// check to see if only the last dim is cropped
+	matrixC * out = NULL;
 	bool onlyLastChanged = true;
+#ifdef DEBUG
+	if(in == NULL || newDims == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	// check to see if only the last dim is cropped
 	for (int i = 0; i < MAX_DIMS - 1; i++) {
 		if (in->dims[i] != newDims[i]) {
 			onlyLastChanged = false;
@@ -437,10 +514,10 @@ matrixC * crop_matrixC(matrixC * in, size_t * newDims) {
 		// otherwise, we have to actually rearrange the data
 
 		// create output matrix
-		if (in->location == host) {
-			out = new_matrixC(newDims, host);
-		} else if (in->location == device) {
-			out = new_matrixC(newDims, device);
+		if (in->location == HOST) {
+			out = new_matrixC(newDims, HOST);
+		} else if (in->location == DEVICE) {
+			out = new_matrixC(newDims, DEVICE);
 		} else {
 			// error
 		}
@@ -453,13 +530,13 @@ matrixC * crop_matrixC(matrixC * in, size_t * newDims) {
 			// to index relative to input matrix
 			out_coord = I2C(i, out->dims);
 			in_idx = C2I(out_coord, in->dims);
-			
+
 			// copy the desired portion of this column
-			if (in->location == host) {
+			if (in->location == HOST) {
 				memcpy(&(out->data[i]),
 						&(in->data[in_idx]),
 						out->dims[0]*out->size);
-			} else if (in->location == device) {
+			} else if (in->location == DEVICE) {
 				cudaErrChk(cudaMemcpy(&(out->data[i]),
 						&(in->data[in_idx]),
 						out->dims[0],
@@ -469,7 +546,7 @@ matrixC * crop_matrixC(matrixC * in, size_t * newDims) {
 			}
 		}
 		// free input data
-		free_matrixC(in);	
+		delete_matrixC(in);
 	}
 	return out;
 }
@@ -480,7 +557,13 @@ matrixC * crop_matrixC(matrixC * in, size_t * newDims) {
 void print_matrixC(matrixC * in, size_t start, size_t end) {
 	// if matrix is on device, copy it to host
 	bool usingCopy = false;
-	if (in->location == device) {
+#ifdef DEBUG
+	if(in == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	if (in->location == DEVICE) {
 		in = toHostC(in);
 		usingCopy = true;
 	}
@@ -493,7 +576,7 @@ void print_matrixC(matrixC * in, size_t start, size_t end) {
 		coord = I2C(i, in->dims);
 		firstCoord = coord[0];
 		if (firstCoord == 0) {
-			printf("\nColumn %d:\n\n", I2C(i, in->dims)[1]); 
+			printf("\nColumn %d:\n\n", I2C(i, in->dims)[1]);
 		}
 		// print entry
 		printf("%f + %fi\n",
@@ -503,7 +586,7 @@ void print_matrixC(matrixC * in, size_t start, size_t end) {
 
 	// if we copied to host, free our copy
 	if (usingCopy) {
-		free_matrixC(in);
+		delete_matrixC(in);
 	}
 }
 

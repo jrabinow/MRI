@@ -21,10 +21,11 @@
 #include "cudaErr.h" // cuda and cublas error handlers
 #include "TVTemp.h" // total variate temporal operator
 #include "multicoilGpuNUFFT.cpp" // multicoil nonuniform FFT operator
+#include "utils.h"
 
 /* CORRECT LINKING DEMO */
 //#include <cuda_utils.hpp>
-  
+
 
 typedef struct {
 	matrixC * read; // k space readings
@@ -33,7 +34,7 @@ typedef struct {
 	double lambda; // trade off control TODO: between what?
 	double l1Smooth; // TODO: find out what this does
 	int num_iter; // number of iterations of the reconstruction
-	cublasHandle_t handle; // handle to CUBLAS context	
+	cublasHandle_t handle; // handle to CUBLAS context
 } param_type;
 
 
@@ -76,14 +77,14 @@ matrixC * reindex(matrixC * in, ) {
 	// allocate matrix with new dimensions
 	size_t new_dims[MAX_DIMS] = { };
 	matrixC * out = kjlk;
-	
+
 	// loop over indices of new matrix,
 	// copying old data to new matrix
 	size_t * new_coord;
 	size_t old_coord[MAX_DIMS];
 	for (size_t i = 0; i < out->num; i++) {
 		// convert new index to new coordinate
-		new_coord = I2C(i, new->dims); 
+		new_coord = I2C(i, new->dims);
 		// convert new coordinate to old coordinate
 		old_coord
 
@@ -122,7 +123,7 @@ matrixC * reindex(matrixC * in, ) {
 				read->dims[0]*read->size);
 	}
 	// reassign read pointer to time series and free old data
-	free_matrixC(read);
+	delete_matrixC(read);
 	*read = *read_ts;
 }
 
@@ -136,18 +137,18 @@ matrixC * reindex(matrixC * in, ) {
 void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type * param) {
 	// Since for traj and comp we're just splitting the last dimensions
 	// we get away with just reindexing the same underlying data,
-	traj->dims[1] = param->num_spokes;
-	traj->dims[2] = param->num_frames;
-	comp->dims[1] = param->num_spokes;
-	comp->dims[2] = param->num_frames;
+	traj->dims[1] = comp->dims[1] = param->num_spokes;
+	traj->dims[2] = comp->dims[2] = param->num_frames;
 
 	// But read requires reordering the data
 	// allocate new matrix read_ts
-	size_t read_ts_dims[MAX_DIMS] = { read->dims[0],
-			param->num_spokes,
-			read->dims[2],
-			param->num_frames };
-	matrixC * read_ts = new_matrixC(read_ts_dims, host);
+	size_t read_ts_dims[MAX_DIMS] = {
+		read->dims[0],
+		param->num_spokes,
+		read->dims[2],
+		param->num_frames
+	};
+	matrixC * read_ts = new_matrixC(read_ts_dims, HOST);
 
 	// loop over indices of read_ts
 	size_t * read_ts_coord;
@@ -174,7 +175,7 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
 	// track of it after the assignment
 	matrixC * read_copy = read;
 	*read = *read_ts;
-	free_matrixC(read_copy);
+	delete_matrixC(read_copy);
 }
 
 
@@ -187,12 +188,12 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
  * entry equals some value (in this case 1). In the latter
  * we uniformly scale entries so that *the norm* of the
  * matrix--treated as a vector--equals 1 (and always 1)
- * 
+ *
  */
 
 void normalize(matrixC * mat) {
 	// Make sure we get a host matrix
-	if (mat->location == device) {
+	if (mat->location == DEVICE) {
 		printf("Error: normalize only for host matrices\n");
 	}
 
@@ -227,9 +228,26 @@ void normalize(matrixC * mat) {
 
 	*/
 }
+void density_compensation(matrixC *read, matrix *comp)
+{
+	size_t j = 0;
+	/* TODO: fix linking so that xmalloc is found */
+	cuDoubleComplex *sqrt_comp = NULL;
 
+	if(read == NULL || comp == NULL) {
+		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+	printf("read->location: %d\tcomp->location: %d\n", read->location, comp->location);
+	sqrt_comp = (cuDoubleComplex*) xmalloc(comp->num * comp->size);
 
-
+	for(size_t i = 0; i < comp->num; i++)
+		sqrt_comp[i] = make_cuDoubleComplex(sqrt(comp->data[i]), 0);
+	for(size_t i = 0; i < read->num; i += j)
+		for(j = 0; j < comp->num; j++)
+			read->data[i + j] = cuCmul(read->data[i + j], sqrt_comp[j]);
+	free(sqrt_comp);
+}
 
 /*
 * Load data from file and save to array structs
@@ -249,17 +267,24 @@ void load_data(matrixC ** traj,
 	// 2nd dim: number of readings
 	// 3rd dim: number of coils
 	// TODO: should these be constants?
+	/* NO they most definitely should not if we can avoid it. How could we
+	 * determine matrix dimensions, are they saved in the file along with
+	 * other metadata by any chance ? */
 	size_t dims[MAX_DIMS] = {768, 600, 12};
 
 	// Make auxillary matrix data sizes
-	size_t dims_sens[MAX_DIMS] = {dims[0] / 2, dims[0] / 2, dims[2]};
-	size_t dims_no_coils[MAX_DIMS] = {dims[0], dims[1]};
+	size_t dims_sens[MAX_DIMS] = {
+		dims[0] / 2,
+		dims[0] / 2,
+		dims[2]
+	};
+	size_t dims_no_coils[MAX_DIMS] = { dims[0], dims[1] };
 
 	// allocate matrices on host
-	*traj = new_matrixC(dims_no_coils, host);
-	*sens = new_matrixC(dims_sens, host);
-	*read = new_matrixC(dims, host);
-	*comp = new_matrix(dims_no_coils, host);
+	*traj = new_matrixC(dims_no_coils, HOST);
+	*sens = new_matrixC(dims_sens, HOST);
+	*read = new_matrixC(dims, HOST);
+	*comp = new_matrix(dims_no_coils, HOST);
 
 	// open matrix files
 	// these were pulled from liver_data.mat by matio and convertmat
@@ -276,10 +301,20 @@ void load_data(matrixC ** traj,
 	fread((*comp)->data, (*comp)->size, (*comp)->num, comp_file);
 
 	// copy matrices to device
+	/* TODO: Why are these being copied to device here? The return
+	   value is simply being discarded. It's pointless */
+	/*
 	toDeviceC(*traj);
 	toDeviceC(*sens);
 	toDeviceC(*read);
-	toDevice(*comp);	
+	toDevice(*comp);
+	*/
+
+	/* cleanup */
+	fclose(traj_file);
+	fclose(sens_file);
+	fclose(read_file);
+	fclose(comp_file);
 }
 
 /* Just preprocessing, no GPU
@@ -295,11 +330,12 @@ int main(int argc, char **argv) {
 	matrix * comp; // density compensation (w)
 
 	// Reconstruction parameters
-	param_type * param = (param_type *)malloc(sizeof(param_type));
+	/* TODO: start using xmalloc */
+	param_type * param = (param_type*) xmalloc(sizeof(param_type));
 	param->num_spokes = 21; // spokes (i.e. readings) per frame (Fibonacci number)
 	param->num_iter = 8; // number of iterations of the reconstruction
 	cublasErrChk(cublasCreate(&(param->handle))); // create cuBLAS context
-	
+
 	// Load data
 	load_data(&traj, &sens, &read, &comp, param);
 
@@ -307,12 +343,12 @@ int main(int argc, char **argv) {
 	if (false) {
 		l1norm(traj, sens, read, comp, param);
 	}
-	
+
 	// normalize coil sensitivities
 	normalize(sens);
 
 	// multiply readings by density compensation
-	// TODO (Julien): write this function
+	density_compensation(read, comp);
 
 	// crop data so that spokes divide evenly into frames with none left over
 	param->num_frames = read->dims[1] / param->num_spokes;
@@ -353,7 +389,7 @@ int main(int argc, char **argv) {
 	print_matrixC(read, 0, 20);
 	printf("\n----Density compensation aka comp aka w----\n");
 	print_matrix(comp, 0, 20);
-	
+
 	// WORKING UP TO HERE
 
 	/* CORRECT LINKING DEMO */
@@ -399,7 +435,7 @@ int main(int argc, char **argv) {
 	/*
 	//param.lambda = 0.25*max(abs(recon_nufft(:)));
 	*/
-	
+
 	// fprintf('\n GRASP reconstruction \n')
 
 	// long starttime = clock_gettime(CLOCK_MONOTONIC, tv_nsec);
@@ -417,10 +453,11 @@ int main(int argc, char **argv) {
 	cublasDestroy(param->handle);
 
 	// free memory
-	free_matrixC(traj);
-	free_matrixC(sens);
-	free_matrixC(read);
-	free_matrix(comp);
+	delete_matrixC(traj);
+	delete_matrixC(sens);
+	delete_matrixC(read);
+	delete_matrix(comp);
+	cudaDeviceReset();
 
 	return 0;
 }
