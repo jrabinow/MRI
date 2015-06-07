@@ -44,16 +44,14 @@ __global__ void elementWiseMultBySqrt(cuDoubleComplex * kdata, double * w) {
     // one time and use the result for all slices of kdata
     int i = threadIdx.x * blockIdx.x;
     int j = blockIdx.y;
-    cuDoubleComplex sqrtofelement = make_cuDoubleComplex(sqrt(w[i]), 0);
+    cuDoubleComplex sqrtofelement = make_cuDoubleComplex(sqrt(w[i]), (double) 0);
     // possible overflow error with cuCmul (see cuComplex.h)
     kdata[j] = cuCmul(kdata[j], sqrtofelement); // WARNING
 }
 
 #endif
 
-/*
- * l1norm
- */
+/* l1norm */
 
 void l1norm(matrixC * traj,
 		matrixC * sens,
@@ -133,7 +131,6 @@ matrixC * reindex(matrixC * in, ) {
  * Sort data into time series
  * It'd be cool if this was more general, but for now it's very explicit
  */
-
 void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type * param) {
 	// Since for traj and comp we're just splitting the last dimensions
 	// we get away with just reindexing the same underlying data,
@@ -178,8 +175,6 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
 	delete_matrixC(read_copy);
 }
 
-
-
 /*
  * Normalize a complex matrix on host in place so maximum modulus is 1
  * This is "normalize" as in peak normalization in audio
@@ -207,7 +202,7 @@ void normalize(matrixC * mat) {
 
 	// Scale entries by maximum modulus
 	for (size_t i = 0; i < mat->num; i++) {
-		mat->data[i] = cuCdiv(mat->data[i], make_cuDoubleComplex(max_mod, 0.0));
+		mat->data[i] = cuCdiv(mat->data[i], make_cuDoubleComplex(max_mod, (double) 0));
 	}
 
 	/*
@@ -225,24 +220,21 @@ void normalize(matrixC * mat) {
 			mat->size, cudaMemcpyDeviceToHost));
 	const double inv_max_mod = 1/cuCabs(max_mod_num);
 	cublasErrChk(cublasZdscal(handle, b1.t, &inv_max_mod, b1.d, 1));
-
 	*/
 }
 void density_compensation(matrixC *read, matrix *comp)
 {
 	size_t j = 0;
-	/* TODO: fix linking so that xmalloc is found */
 	cuDoubleComplex *sqrt_comp = NULL;
 
 	if(read == NULL || comp == NULL) {
 		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
-	printf("read->location: %d\tcomp->location: %d\n", read->location, comp->location);
-	sqrt_comp = (cuDoubleComplex*) xmalloc(comp->num * comp->size);
+	sqrt_comp = (cuDoubleComplex*) xmalloc(comp->num * sizeof(cuDoubleComplex));
 
 	for(size_t i = 0; i < comp->num; i++)
-		sqrt_comp[i] = make_cuDoubleComplex(sqrt(comp->data[i]), 0);
+		sqrt_comp[i] = make_cuDoubleComplex(sqrt(comp->data[i]), (double) 0);
 	for(size_t i = 0; i < read->num; i += j)
 		for(j = 0; j < comp->num; j++)
 			read->data[i + j] = cuCmul(read->data[i + j], sqrt_comp[j]);
@@ -255,12 +247,9 @@ void density_compensation(matrixC *read, matrix *comp)
 * script "convertmat.c" using the matio library
 * and then directly written to files by fwrite)
 */
-
-void load_data(matrixC ** traj,
-		matrixC ** sens,
-		matrixC ** read,
-		matrix ** comp,
-		param_type * param) {
+void load_data(matrixC ** traj, matrixC ** sens, matrixC ** read, matrix ** comp,
+		param_type * param)
+{
 
 	// Input data size (based on the k space readings matrix)
 	// 1st dim: number of samples per reading per coil
@@ -330,12 +319,15 @@ int main(int argc, char **argv) {
 	matrix * comp; // density compensation (w)
 
 	// Reconstruction parameters
-	/* TODO: start using xmalloc */
 	param_type * param = (param_type*) xmalloc(sizeof(param_type));
 	param->num_spokes = 21; // spokes (i.e. readings) per frame (Fibonacci number)
 	param->num_iter = 8; // number of iterations of the reconstruction
 	cublasErrChk(cublasCreate(&(param->handle))); // create cuBLAS context
-
+#ifdef DEBUG
+	init_log(stderr, LOG_DEBUG);
+#else
+	init_log(stderr, LOG_FATAL);
+#endif
 	// Load data
 	load_data(&traj, &sens, &read, &comp, param);
 
@@ -352,11 +344,15 @@ int main(int argc, char **argv) {
 
 	// crop data so that spokes divide evenly into frames with none left over
 	param->num_frames = read->dims[1] / param->num_spokes;
-	size_t new_dims_read[MAX_DIMS] = {read->dims[0],
-			param->num_frames*param->num_spokes,
-			read->dims[2] };
-	size_t new_dims_no_coils[MAX_DIMS] = { new_dims_read[0],
-			new_dims_read[1] };
+	size_t new_dims_read[MAX_DIMS] = {
+		read->dims[0],
+		param->num_frames*param->num_spokes,
+		read->dims[2]
+	};
+	size_t new_dims_no_coils[MAX_DIMS] = {
+		new_dims_read[0],
+		new_dims_read[1]
+	};
 
 	traj = crop_matrixC(traj, new_dims_no_coils);
 	read = crop_matrixC(read, new_dims_read);
@@ -453,6 +449,7 @@ int main(int argc, char **argv) {
 	cublasDestroy(param->handle);
 
 	// free memory
+	free(param);
 	delete_matrixC(traj);
 	delete_matrixC(sens);
 	delete_matrixC(read);

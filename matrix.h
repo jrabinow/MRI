@@ -10,9 +10,6 @@
  * To copy metadata without changing data, use struct assignment:
  *   matrix * mat = new_matrix(dims, HOST);
  *   mat2 = mat;
- *
- * TODO: malloc error checking (cuda error checking done)
- *
  */
 
 #ifndef MATRIX
@@ -117,12 +114,12 @@ matrix * new_matrix(size_t * dims, locationFlag location) {
 #ifdef DEBUG
 	static unsigned mat_id = 0;
 	if(dims == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
 	// allocate metadata struct
-	matrix * mat = (matrix *)malloc(sizeof(matrix));
+	matrix * mat = (matrix*) xmalloc(sizeof(matrix));
 
 	// change dims with size 0 to have size 1
 	// making copy of dims in the process
@@ -141,12 +138,13 @@ matrix * new_matrix(size_t * dims, locationFlag location) {
 
 	// allocate data array
 	if (mat->location == HOST) {
-		mat->data = (double *)malloc(mat->num*mat->size);
+		mat->data = (double*) xmalloc(mat->num*mat->size);
 	} else if (mat->location == DEVICE) {
 		cudaErrChk(cudaMalloc((void**)&(mat->data),
 				mat->num*mat->size));
 	} else {
-		// error
+		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
 #ifdef DEBUG
 	mat->mat_id = mat_id++;
@@ -158,19 +156,30 @@ matrix * new_matrix(size_t * dims, locationFlag location) {
 void delete_matrix(matrix * in) {
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
+	log_message(LOG_DEBUG, "matrix id = %u\n", in->mat_id);
 #endif
 	// free data on host or device
 	if (in->location == HOST) {
+#ifdef DEBUG
+		log_message(LOG_DEBUG, "%s\tFreeing in->data", __func__);
+#endif
 		free(in->data);
 	} else if (in->location == DEVICE) {
+#ifdef DEBUG
+		log_message(LOG_DEBUG, "%s\tCUDAFreeing in->data", __func__);
+#endif
 		cudaFree(in->data);
 	} else {
-		// error
+		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
 	// free metadata on host
+#ifdef DEBUG
+	log_message(LOG_DEBUG, "%s\tFreeing in", __func__);
+#endif
 	free(in);
 }
 
@@ -178,7 +187,7 @@ void delete_matrix(matrix * in) {
 matrix * copy(matrix * in) {
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -191,7 +200,8 @@ matrix * copy(matrix * in) {
 				in->num*in->size,
 				cudaMemcpyDeviceToDevice));
 	} else {
-		// error
+		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
 	return out;
 }
@@ -200,7 +210,7 @@ matrix * copy(matrix * in) {
 matrix * toHost(matrix * in) {
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -219,7 +229,7 @@ matrix * toHost(matrix * in) {
 matrix * toDevice(matrix * in) {
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -240,7 +250,7 @@ matrix * toDevice(matrix * in) {
 matrix * crop_matrix(matrix * in, size_t * newDims) {
 #ifdef DEBUG
 	if(in == NULL || newDims == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -273,8 +283,8 @@ matrix * crop_matrix(matrix * in, size_t * newDims) {
 		} else if (in->location == DEVICE) {
 			out = new_matrix(newDims, DEVICE);
 		} else {
-			// error
-			return out;
+			log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+			exit(EXIT_FAILURE);
 		}
 
 		// loop over the beginnings of the columns of the output matrix
@@ -297,7 +307,8 @@ matrix * crop_matrix(matrix * in, size_t * newDims) {
 						out->dims[0],
 						cudaMemcpyDeviceToDevice));
 			} else {
-				// error
+				log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+				exit(EXIT_FAILURE);
 			}
 		}
 		// free input data
@@ -310,7 +321,7 @@ matrix * crop_matrix(matrix * in, size_t * newDims) {
 void print_matrix(matrix * in, size_t start, size_t end) {
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -362,7 +373,7 @@ matrixC * new_matrixC(size_t * dims, locationFlag location) {
 #ifdef DEBUG
 	static unsigned mat_id = 0;
 	if(dims == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -386,12 +397,13 @@ matrixC * new_matrixC(size_t * dims, locationFlag location) {
 
 	// allocate data array
 	if (mat->location == HOST) {
-		mat->data = (cuDoubleComplex *)malloc(mat->num*mat->size);
+		mat->data = (cuDoubleComplex*) xmalloc(mat->num*mat->size);
 	} else if (mat->location == DEVICE) {
 		cudaErrChk(cudaMalloc((void**)&(mat->data),
 				mat->num*mat->size));
 	} else {
-		// error
+		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
 #ifdef DEBUG
 	mat->mat_id = mat_id++;
@@ -403,30 +415,38 @@ matrixC * new_matrixC(size_t * dims, locationFlag location) {
 void delete_matrixC(matrixC * in) {
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
-	printf("matrix id = %u\n", in->mat_id);
+	log_message(LOG_DEBUG, "matrix id = %u\n", in->mat_id);
 #endif
-	puts("Hello World!");
 	// free data on host or device
-	if (in->location == HOST) {
+	if(in->location == HOST) {
+#ifdef DEBUG
+		log_message(LOG_DEBUG, "%s\tfreeing in->data", __func__);
+#endif
 		free(in->data);
 	} else if (in->location == DEVICE) {
+#ifdef DEBUG
+		log_message(LOG_DEBUG, "%s\tcudafreeing in->data", __func__);
+#endif
 		cudaFree(in->data);
 	} else {
-		// error
+		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
 	// free metadata on host
+#ifdef DEBUG
+	log_message(LOG_DEBUG, "%s\tfreeing in", __func__);
+#endif
 	free(in);
-	puts("Gbye World!");
 }
 
 // copy matrix maintaining location
 matrixC * copyC(matrixC * in) {
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -439,7 +459,8 @@ matrixC * copyC(matrixC * in) {
 				in->num*in->size,
 				cudaMemcpyDeviceToDevice));
 	} else {
-		// error
+		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
 	return out;
 }
@@ -449,7 +470,7 @@ matrixC * toHostC(matrixC * in) {
 	matrixC * out = NULL;
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -468,7 +489,7 @@ matrixC * toDeviceC(matrixC * in) {
 	matrixC * out = NULL;
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -490,7 +511,7 @@ matrixC * crop_matrixC(matrixC * in, size_t * newDims) {
 	bool onlyLastChanged = true;
 #ifdef DEBUG
 	if(in == NULL || newDims == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
@@ -519,7 +540,8 @@ matrixC * crop_matrixC(matrixC * in, size_t * newDims) {
 		} else if (in->location == DEVICE) {
 			out = new_matrixC(newDims, DEVICE);
 		} else {
-			// error
+			log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+			exit(EXIT_FAILURE);
 		}
 
 		// loop over the beginnings of the columns of the output matrix
@@ -542,7 +564,8 @@ matrixC * crop_matrixC(matrixC * in, size_t * newDims) {
 						out->dims[0],
 						cudaMemcpyDeviceToDevice));
 			} else {
-				// error
+				log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+				exit(EXIT_FAILURE);
 			}
 		}
 		// free input data
@@ -559,7 +582,7 @@ void print_matrixC(matrixC * in, size_t start, size_t end) {
 	bool usingCopy = false;
 #ifdef DEBUG
 	if(in == NULL) {
-		fprintf(stderr, "Error: NULL pointer passed in %s\n", __func__);
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
