@@ -31,7 +31,7 @@ inline void cudaErrorHandler(cudaError_t err, const char * file, int line) {
 	if (err != cudaSuccess) {
 		fprintf(stderr,
 				"CUDA Error in %s on line %d:%s\n",
-				file, 
+				file,
 				line,
 				cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
