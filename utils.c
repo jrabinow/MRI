@@ -3,7 +3,6 @@
 void *xmalloc(size_t size)
 {
 	void *ptr = NULL;
-	int count = 0;
 
 	ptr = malloc(size);
 	if(ptr != NULL)
@@ -11,6 +10,16 @@ void *xmalloc(size_t size)
 	perror("Error allocating memory ");
 	exit(EXIT_FAILURE);
 }
+
+void *xrealloc(void *ptr, size_t size)
+{
+	ptr = realloc(ptr, size);
+	if(ptr != NULL)
+		return ptr;
+	perror("Error allocating memory ");
+	exit(EXIT_FAILURE);
+}
+
 
 void failwith(char *errmsg)
 {

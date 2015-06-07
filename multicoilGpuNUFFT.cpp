@@ -31,13 +31,14 @@
 #include "matrix.h"
 #include "cudaErr.h"
 #include "gpuNUFFT_operator_factory.hpp"
+#include "utils.h"
 
 // A global multidimensional array of pointers to gpuNUFFT operators
 gpuNUFFT::GpuNUFFTOperator *** gpuNUFFTOps;
 
-extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
-		matrix * comp,
-		matrixC * sens,
+extern void createMulticoilGpuNUFFTOperator(Matrix * traj,
+		Matrix * comp,
+		Matrix * sens,
 		int kernel_width,
 		int sector_width,
 		double oversample_ratio) {
@@ -56,7 +57,7 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 	
 	// Allocate array to store operator pointers
 	for (size_t i = 0; i < traj->dims[2]; i++) {
-		gpuNUFFTOps[i] = (gpuNUFFT::GpuNUFFTOperator **)malloc(
+		gpuNUFFTOps[i] = (gpuNUFFT::GpuNUFFTOperator**) xmalloc(
 				sens->dims[2]*sizeof(gpuNUFFT::GpuNUFFTOperator *));
 	}
 
@@ -65,9 +66,9 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 	// makes a copy of it's input parameters,
 	// so it's okay to change them after each iteration of the
 	// below for loop
-	kSpaceTraj.data = (DType *)malloc(2*traj->num*sizeof(DType));
-	densCompData.data = (DType *)malloc(comp->num*sizeof(DType));
-	sensData.data = (DType2 *)malloc(sens->num*sizeof(DType2));
+	kSpaceTraj.data = (DType *) xmalloc(2*traj->num*sizeof(DType));
+	densCompData.data = (DType *) xmalloc(comp->num*sizeof(DType));
+	sensData.data = (DType2 *) xmalloc(sens->num*sizeof(DType2));
 	
 	// Cast some arguments
 	const IndType kernelWidth = (IndType)kernel_width;
@@ -114,8 +115,8 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 		// think grasp uses values between 0 and 1
 		for (size_t j = 0; j < traj->dims[0]*traj->dims[1]; j++) {
 			traj_index = C2I(traj_coord, traj->dims) + j; 
-			kSpaceTraj.data[2*j] = (DType)cuCreal(traj->data[traj_index]);
-			kSpaceTraj.data[2*j + 1] = (DType)cuCimag(traj->data[traj_index]);
+			kSpaceTraj.data[2*j] = (DType)cuCreal(traj->cdata[traj_index]);
+			kSpaceTraj.data[2*j + 1] = (DType)cuCimag(traj->cdata[traj_index]);
 		}
 
 		// Cast density compensation: comp from grasp is an array
@@ -128,7 +129,7 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 		// Also we should be taking the square root of this
 		for (size_t j = 0; j < comp->dims[0]*comp->dims[1]; j++) {
 			comp_index = C2I(comp_coord, comp->dims) + j;
-			densCompData.data[j] = (DType)comp->data[comp_index];
+			densCompData.data[j] = (DType)comp->ddata[comp_index];
 		}
 
 		// for each coil
@@ -142,8 +143,8 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 			// is a struct with two floats x and y
 			for (size_t k = 0; k < sens->dims[0]*sens->dims[1]; k++) {
 				sens_index = C2I(sens_coord, sens->dims) + k;
-				sensData.data[k].x = (float)cuCreal(sens->data[sens_index]);
-				sensData.data[k].y = (float)cuCimag(sens->data[sens_index]);
+				sensData.data[k].x = (float)cuCreal(sens->cdata[sens_index]);
+				sensData.data[k].y = (float)cuCimag(sens->cdata[sens_index]);
 			}
 			
 			// create operator for this frame and this coil
@@ -167,9 +168,9 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 	/*  multicoil wrapper for createGpuNUFFTOperator()
  	 */
 #if 0
-	void createMulticoilGpuNUFFTOperator(matrixC * traj,
-			matrix * comp,
-			matrixC * sens,
+	void createMulticoilGpuNUFFTOperator(Matrix * traj,
+			Matrix * comp,
+			Matrix * sens,
 			int kernel_width,
 			int sector_width,
 			double oversample_ratio) {
@@ -188,9 +189,9 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 		// makes a copy of it's input parameters,
 		// so it's okay to change them after each iteration of the
 		// below for loop
-		kSpaceTraj.data = (DType *)malloc(2*traj->num*sizeof(DType));
-		densCompData.data = (DType *)malloc(comp->num*sizeof(DType));
-		sensData.data = (DType2 *)malloc(sens->num*sizeof(DType2));
+		kSpaceTraj.data = (DType *) xmalloc(2*traj->num*sizeof(DType));
+		densCompData.data = (DType *) xmalloc(comp->num*sizeof(DType));
+		sensData.data = (DType2 *) xmalloc(sens->num*sizeof(DType2));
 		
 		// Cast arguments
 		const IndType kernelWidth = (IndType)kernel_width;
@@ -223,14 +224,14 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 			// think grasp uses values between 0 and 1
 			for (size_t i = ; i < traj->num; i++) {
 				kSpaceTraj.data[2*i] = (DType)cuCreal(traj->data[i]);
-				kSpaceTraj.data[2*i + 1] = (DType)cuCimag(traj->data[i+1]);
+				kSpaceTraj.data[2*i + 1] = (DType)cuCimag(traj->cdata[i+1]);
 			}
 
 			// Cast density compensation: comp from grasp is an array
 			// of doubles. gpuNUFFT expects an array of DType, which is
 			// a typedef of float.
 			for (size_t i = 0; i < comp->num; i++) {
-				densCompData.data[i] = (DType)comp->data[i];
+				densCompData.data[i] = (DType)comp->ddata[i];
 			}
 
 			// Cast coil sensitivities: sens from grasp is an array
@@ -238,8 +239,8 @@ extern void createMulticoilGpuNUFFTOperator(matrixC * traj,
 			// DType2, which is a typedef of cuda's float2, which (I think)
 			// is a struct with two floats x and y
 			for (size_t i = 0; i < sens->num; i++) {
-				sensData.data[i].x = (float)cuCreal(sens->data[i]);
-				sensData.data[i].y = (float)cuCimag(sens->data[i]);
+				sensData.data[i].x = (float)cuCreal(sens->cdata[i]);
+				sensData.data[i].y = (float)cuCimag(sens->cdata[i]);
 			}
 
 			

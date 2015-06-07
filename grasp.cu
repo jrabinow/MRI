@@ -28,7 +28,7 @@
 
 
 typedef struct {
-	matrixC * read; // k space readings
+	Matrix * read; // k space readings
 	int num_spokes; // spokes per frame
 	int num_frames; // frames in data
 	double lambda; // trade off control TODO: between what?
@@ -53,16 +53,13 @@ __global__ void elementWiseMultBySqrt(cuDoubleComplex * kdata, double * w) {
 
 /* l1norm */
 
-void l1norm(matrixC * traj,
-		matrixC * sens,
-		matrixC * read,
-		matrix * comp,
-		param_type * param) {
-
-	print_matrixC(traj, 0, 20);
-	print_matrixC(sens, 0, 20);
-	print_matrixC(read, 0, 20);
-	print_matrix(comp, 0, 20);
+void l1norm(Matrix * traj, Matrix * sens, Matrix * read,
+	Matrix * comp, param_type * param)
+{
+	print_Matrix(traj, 0, 20);
+	print_Matrix(sens, 0, 20);
+	print_Matrix(read, 0, 20);
+	print_Matrix(comp, 0, 20);
 
 	exit(EXIT_SUCCESS);
 }
@@ -70,14 +67,13 @@ void l1norm(matrixC * traj,
 
 #if 0
 
-
-matrixC * reindex(matrixC * in, ) {
-	// allocate matrix with new dimensions
+MatrixC * reindex(Matrix * in, ) {
+	// allocate Matrix with new dimensions
 	size_t new_dims[MAX_DIMS] = { };
-	matrixC * out = kjlk;
+	Matrix * out = kjlk;
 
-	// loop over indices of new matrix,
-	// copying old data to new matrix
+	// loop over indices of new Matrix,
+	// copying old data to new Matrix
 	size_t * new_coord;
 	size_t old_coord[MAX_DIMS];
 	for (size_t i = 0; i < out->num; i++) {
@@ -101,7 +97,7 @@ matrixC * reindex(matrixC * in, ) {
 			param->num_spokes,
 			read->dims[2],
 			param->num_frames };
-	matrixC * read_ts = new_matrixC(read_ts_dims, host);
+	Matrix * read_ts = new_Matrix(read_ts_dims, host);
 	// loop over the first entries of the columns of read_ts
 	size_t * read_ts_coord;
 	size_t read_coord[MAX_DIMS];
@@ -121,7 +117,7 @@ matrixC * reindex(matrixC * in, ) {
 				read->dims[0]*read->size);
 	}
 	// reassign read pointer to time series and free old data
-	delete_matrixC(read);
+	delete_Matrix(read);
 	*read = *read_ts;
 }
 
@@ -131,7 +127,7 @@ matrixC * reindex(matrixC * in, ) {
  * Sort data into time series
  * It'd be cool if this was more general, but for now it's very explicit
  */
-void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type * param) {
+void make_time_series(Matrix * traj, Matrix * read, Matrix * comp, param_type * param) {
 	// Since for traj and comp we're just splitting the last dimensions
 	// we get away with just reindexing the same underlying data,
 	traj->dims[1] = comp->dims[1] = param->num_spokes;
@@ -145,7 +141,7 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
 		read->dims[2],
 		param->num_frames
 	};
-	matrixC * read_ts = new_matrixC(read_ts_dims, HOST);
+	Matrix * read_ts = new_Matrix(read_ts_dims, HOST, COMPLEX);
 
 	// loop over indices of read_ts
 	size_t * read_ts_coord;
@@ -170,9 +166,12 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
 	// reassign read pointer to time series and free old data
 	// we have to make a copy of the pointer to old read so we don't loose
 	// track of it after the assignment
-	matrixC * read_copy = read;
+	/* TODO: Why can't we just do this?
+	delete_Matrix(read);
+	*read = *read_ts; */
+	Matrix * read_copy = read;
 	*read = *read_ts;
-	delete_matrixC(read_copy);
+	delete_Matrix(read_copy);
 }
 
 /*
@@ -186,23 +185,26 @@ void make_time_series(matrixC * traj, matrixC * read, matrix * comp, param_type 
  *
  */
 
-void normalize(matrixC * mat) {
+void normalize(Matrix* mat) {
 	// Make sure we get a host matrix
 	if (mat->location == DEVICE) {
-		printf("Error: normalize only for host matrices\n");
+		log_message(LOG_FATAL, "normalize only for host matrices");
+		exit(EXIT_FAILURE);
+	} else if(mat->vartype != COMPLEX) {
+		log_message(LOG_FATAL, "Matrix of non-complex values passed");
+		exit(EXIT_FAILURE);
 	}
-
 	// Find maximum modulus
 	double max_mod = 0;
 	for (size_t i = 0; i < mat->num; i++) {
-		if (cuCabs(mat->data[i]) > max_mod) {
-			max_mod = cuCabs(mat->data[i]);
+		if (cuCabs(mat->cdata[i]) > max_mod) {
+			max_mod = cuCabs(mat->cdata[i]);
 		}
 	}
 
 	// Scale entries by maximum modulus
 	for (size_t i = 0; i < mat->num; i++) {
-		mat->data[i] = cuCdiv(mat->data[i], make_cuDoubleComplex(max_mod, (double) 0));
+		mat->cdata[i] = cuCdiv(mat->cdata[i], make_cuDoubleComplex(max_mod, (double) 0));
 	}
 
 	/*
@@ -222,7 +224,7 @@ void normalize(matrixC * mat) {
 	cublasErrChk(cublasZdscal(handle, b1.t, &inv_max_mod, b1.d, 1));
 	*/
 }
-void density_compensation(matrixC *read, matrix *comp)
+void density_compensation(Matrix *read, Matrix *comp)
 {
 	size_t j = 0;
 	cuDoubleComplex *sqrt_comp = NULL;
@@ -234,10 +236,10 @@ void density_compensation(matrixC *read, matrix *comp)
 	sqrt_comp = (cuDoubleComplex*) xmalloc(comp->num * sizeof(cuDoubleComplex));
 
 	for(size_t i = 0; i < comp->num; i++)
-		sqrt_comp[i] = make_cuDoubleComplex(sqrt(comp->data[i]), (double) 0);
+		sqrt_comp[i] = make_cuDoubleComplex(sqrt(comp->ddata[i]), (double) 0);
 	for(size_t i = 0; i < read->num; i += j)
 		for(j = 0; j < comp->num; j++)
-			read->data[i + j] = cuCmul(read->data[i + j], sqrt_comp[j]);
+			read->cdata[i + j] = cuCmul(read->cdata[i + j], sqrt_comp[j]);
 	free(sqrt_comp);
 }
 
@@ -247,7 +249,7 @@ void density_compensation(matrixC *read, matrix *comp)
 * script "convertmat.c" using the matio library
 * and then directly written to files by fwrite)
 */
-void load_data(matrixC ** traj, matrixC ** sens, matrixC ** read, matrix ** comp,
+void load_data(Matrix ** traj, Matrix ** sens, Matrix ** read, Matrix ** comp,
 		param_type * param)
 {
 
@@ -270,10 +272,10 @@ void load_data(matrixC ** traj, matrixC ** sens, matrixC ** read, matrix ** comp
 	size_t dims_no_coils[MAX_DIMS] = { dims[0], dims[1] };
 
 	// allocate matrices on host
-	*traj = new_matrixC(dims_no_coils, HOST);
-	*sens = new_matrixC(dims_sens, HOST);
-	*read = new_matrixC(dims, HOST);
-	*comp = new_matrix(dims_no_coils, HOST);
+	*traj = new_Matrix(dims_no_coils, HOST, COMPLEX);
+	*sens = new_Matrix(dims_sens, HOST, COMPLEX);
+	*read = new_Matrix(dims, HOST, COMPLEX);
+	*comp = new_Matrix(dims_no_coils, HOST, DOUBLE);
 
 	// open matrix files
 	// these were pulled from liver_data.mat by matio and convertmat
@@ -313,10 +315,10 @@ void load_data(matrixC ** traj, matrixC ** sens, matrixC ** read, matrix ** comp
 int main(int argc, char **argv) {
 
 	// Input data metadata structs (defined in matrix.h)
-	matrixC * traj; // trajectories through k space (k)
-	matrixC * sens; // coil sensitivities (b1)
-	matrixC * read; // k space readings (kdata)
-	matrix * comp; // density compensation (w)
+	Matrix * traj; // trajectories through k space (k)
+	Matrix * sens; // coil sensitivities (b1)
+	Matrix * read; // k space readings (kdata)
+	Matrix * comp; // density compensation (w)
 
 	// Reconstruction parameters
 	param_type * param = (param_type*) xmalloc(sizeof(param_type));
@@ -331,10 +333,10 @@ int main(int argc, char **argv) {
 	// Load data
 	load_data(&traj, &sens, &read, &comp, param);
 
+#if 0
 	// Emma's l1norm testing function
-	if (false) {
-		l1norm(traj, sens, read, comp, param);
-	}
+	l1norm(traj, sens, read, comp, param);
+#endif
 
 	// normalize coil sensitivities
 	normalize(sens);
@@ -354,9 +356,9 @@ int main(int argc, char **argv) {
 		new_dims_read[1]
 	};
 
-	traj = crop_matrixC(traj, new_dims_no_coils);
-	read = crop_matrixC(read, new_dims_read);
-	comp = crop_matrix(comp, new_dims_no_coils);
+	traj = crop_Matrix(traj, new_dims_no_coils);
+	read = crop_Matrix(read, new_dims_read);
+	comp = crop_Matrix(comp, new_dims_no_coils);
 
 	// sort into time series
 	// TODO (Julien): get this working
@@ -378,13 +380,13 @@ int main(int argc, char **argv) {
 
 	// print matrices
 	printf("\n----K-space trajectories aka traj aka k----\n");
-	print_matrixC(traj, 0, 20);
+	print_Matrix(traj, 0, 20);
 	printf("\n----Coil sensitivities aka sens aka b1----\n");
-	print_matrixC(sens, 0, 20);
+	print_Matrix(sens, 0, 20);
 	printf("\n----K-space readings aka read aka kdata----\n");
-	print_matrixC(read, 0, 20);
+	print_Matrix(read, 0, 20);
 	printf("\n----Density compensation aka comp aka w----\n");
-	print_matrix(comp, 0, 20);
+	print_Matrix(comp, 0, 20);
 
 	// WORKING UP TO HERE
 
@@ -450,10 +452,10 @@ int main(int argc, char **argv) {
 
 	// free memory
 	free(param);
-	delete_matrixC(traj);
-	delete_matrixC(sens);
-	delete_matrixC(read);
-	delete_matrix(comp);
+	delete_Matrix(traj);
+	delete_Matrix(sens);
+	delete_Matrix(read);
+	delete_Matrix(comp);
 	cudaDeviceReset();
 
 	return 0;
