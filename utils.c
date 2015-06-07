@@ -20,7 +20,6 @@ void *xrealloc(void *ptr, size_t size)
 	exit(EXIT_FAILURE);
 }
 
-
 void failwith(char *errmsg)
 {
 	fputs(errmsg, stderr);

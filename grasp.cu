@@ -451,11 +451,11 @@ int main(int argc, char **argv) {
 	cublasDestroy(param->handle);
 
 	// free memory
-	free(param);
 	delete_Matrix(traj);
 	delete_Matrix(sens);
 	delete_Matrix(read);
 	delete_Matrix(comp);
+	free(param);
 	cudaDeviceReset();
 
 	return 0;
