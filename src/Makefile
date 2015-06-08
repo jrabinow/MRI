@@ -58,3 +58,7 @@ distclean: clean
 	# the following command works correctly but prints error messages to stdout. We squash them
 	find ./gpuNUFFT-2.0.6rc2 -type d -name CMakeFiles -exec rm -r {} \; 2>/dev/null
 
+vpath %.o $(SRCDIR)
+vpath %.c $(SRCDIR)
+vpath %.cu $(SRCDIR)
+vpath %.cpp $(SRCDIR)

@@ -44,7 +44,7 @@ Temporary Items
 
 # Other
 .*.swp
-liver_data/
+tests/liver_data/
 grasp
 a.out
 cscope.*
