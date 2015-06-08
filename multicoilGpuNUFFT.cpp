@@ -26,12 +26,7 @@
  * 	
  */
 
-#include <cuda_runtime.h>
-#include <cuComplex.h>
-#include "matrix.h"
-#include "cudaErr.h"
 #include "gpuNUFFT_operator_factory.hpp"
-#include "utils.h"
 
 // A global multidimensional array of pointers to gpuNUFFT operators
 gpuNUFFT::GpuNUFFTOperator *** gpuNUFFTOps;

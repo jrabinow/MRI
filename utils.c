@@ -1,4 +1,4 @@
-#include "utils.h"
+#include <utils.h>
 
 void *xmalloc(size_t size)
 {
@@ -20,7 +20,19 @@ void *xrealloc(void *ptr, size_t size)
 	exit(EXIT_FAILURE);
 }
 
-void failwith(char *errmsg)
+FILE *xfopen(const char *path, const char *mode)
+{
+	FILE *f = (FILE*) NULL;
+
+	f = fopen(path, mode);
+	if(f != NULL)
+		return f;
+	perror("Error opening file ");
+	exit(EXIT_FAILURE);
+}
+
+
+void failwith(const char *errmsg)
 {
 	fputs(errmsg, stderr);
 	fputc('\n', stderr);
@@ -43,9 +55,6 @@ void log_message(log_level_t level, const char *format, ...)
 	va_list ap;
 	time_t rawtime;
 	struct tm *timeinfo;
-#if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix)
-	Color color = WHITE, bgcolor = BLACK;
-#endif	/* #if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix) */
 
 	if(__g_loghandle != NULL && level >= __g_loglevel) {
 		va_start(ap, format);
@@ -61,40 +70,19 @@ void log_message(log_level_t level, const char *format, ...)
 				break;
 			case LOG_INFO:
 				slevel = "INFO";
-#if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix)
-				color = GREEN;
-#endif	/* #if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix) */
 				break;
 			case LOG_WARNING:
 				slevel = "WARNING";
-#if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix)
-				color = YELLOW;
-#endif	/* #if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix) */
 				break;
 			case LOG_ERROR:
 				slevel = "ERROR";
-#if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix)
-				color = RED;
-#endif	/* #if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix) */
 				break;
 			case LOG_FATAL:
 			default:
 				slevel = "FATAL";
-#if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix)
-				bgcolor = RED;
-#endif	/* #if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix) */
 				break;
 		}
-#if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix)
-		if(__g_loghandle == stdout || __g_loghandle == stderr) {
-			fprintf(__g_loghandle, "\x1B[%d;0m", color + 30);
-			fprintf(__g_loghandle, "\x1B[%dm[%s] [%s] %s", bgcolor + 40, timestamp, slevel, buffer);
-			reset_style(__g_loghandle);
-			putc('\n', __g_loghandle);
-			fflush(__g_loghandle);
-		} else
-#endif	/* #if defined(ENABLE_TERMIOS_MANIPULATION) && defined(__unix) */
-			fprintf(__g_loghandle, "[%s] [%s] %s\n", timestamp, slevel, buffer);
+		fprintf(__g_loghandle, "[%s] [%s] %s\n", timestamp, slevel, buffer);
 	}
 }
 

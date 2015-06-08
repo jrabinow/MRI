@@ -8,6 +8,7 @@
 
 void *xmalloc(size_t size);
 void *xrealloc(void *ptr, size_t size);
+FILE *xfopen(const char *path, const char *mode);
 
 typedef enum {
 	LOG_DEBUG,
@@ -24,6 +25,6 @@ void log_message(log_level_t level, const char *format, ... );
 
 /* prints errmsg to stderr and calls exit(). Functions previously
  * registered with atexit() will be called */
-void failwith(char *errmsg);
+void failwith(const char *errmsg);
 
 #endif

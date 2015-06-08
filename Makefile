@@ -1,10 +1,10 @@
 CC=nvcc
 gpuNUFFT_DIR=./gpuNUFFT-2.0.6rc2/CUDA
-CFLAGS= -I$(gpuNUFFT_DIR)/inc
+CFLAGS= -I$(gpuNUFFT_DIR)/inc -Iincludes -I/usr/local/pkg/cuda/6.5/include
 LDFLAGS=-lcublas -lgpuNUFFT_f -lgpuNUFFT_ATM_f -L$(gpuNUFFT_DIR)/bin
 
 BINARY=grasp
-SRCFILES=utils.c grasp.cu
+SRCFILES=utils.c matrix.c grasp.cu
 OBJFILES=$(SRCFILES:.c=.o)
 gpuNUFFT_FILES=libgpuNUFFT_f.so libgpuNUFFT_ATM_f.so
 
@@ -25,6 +25,8 @@ $(BINARY): gpuNUFFT $(OBJFILES)
 	$(CC) $(CFLAGS) $(NVCCFLAGS) $(OBJFILES) -o $@ $(LDFLAGS)
 
 %.o: CC=g++
+#%.o: %.c
+#	$(CC) $(CFLAGS) -c $^ -o $@
 
 gpuNUFFT: extract
 	(test -z '' $(addprefix -a -f $(gpuNUFFT_DIR)/bin/, $(gpuNUFFT_FILES))) ||\

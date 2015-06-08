@@ -17,7 +17,7 @@
 #define cublasErrChk(err) { cublasErrorHandler(err, __FILE__, __LINE__); }
 
 // error handlers
-inline void * allocErrorHandler(void * return_ptr, const char * file, int line) {
+inline void * allocErrorHandler(void* return_ptr, const char * file, int line) {
 	if (return_ptr == NULL) {
 		fprintf(stderr,
 				"Allocation error in %s on line %d\n",
@@ -28,7 +28,7 @@ inline void * allocErrorHandler(void * return_ptr, const char * file, int line) 
 	return return_ptr;
 }
 
-inline void cudaErrorHandler(cudaError_t err, const char * file, int line) {
+inline void cudaErrorHandler(cudaError_t err, const char* file, int line) {
 	if (err != cudaSuccess) {
 		log_message(LOG_FATAL, "CUDA Error in %s on line %d:%s\n",
 				file, line, cudaGetErrorString(err));
@@ -36,7 +36,7 @@ inline void cudaErrorHandler(cudaError_t err, const char * file, int line) {
 	}
 }
 
-inline void cublasErrorHandler(cublasStatus_t err, const char * file, int line) {
+inline void cublasErrorHandler(cublasStatus_t err, const char* file, int line) {
 	if (err != CUBLAS_STATUS_SUCCESS) {
 		log_message(LOG_FATAL, "CUBLAS Error in %s on line %d:%s\n",
 				file, line, (const char*) err);
