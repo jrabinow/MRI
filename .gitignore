@@ -55,3 +55,4 @@ Matlab Code
 .nfs*
 *.o
 Test Code
+.depend

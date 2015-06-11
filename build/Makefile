@@ -1,11 +1,15 @@
 CC=nvcc
 gpuNUFFT_DIR=./gpuNUFFT-2.0.6rc2/CUDA
-CFLAGS= -I$(gpuNUFFT_DIR)/inc -Iincludes -I/usr/local/pkg/cuda/6.5/include
+BINARY=grasp
+SRCDIR=../src
+INCLUDES=$(SRCDIR)/includes $(gpuNUFFT_DIR)/inc /usr/local/pkg/cuda/6.5/include
+#VPATH=$(SRCDIR)
+
+CFLAGS=$(addprefix -I, $(INCLUDES))
 LDFLAGS=-lcublas -lgpuNUFFT_f -lgpuNUFFT_ATM_f -L$(gpuNUFFT_DIR)/bin
 
-BINARY=grasp
 SRCFILES=utils.c matrix.c grasp.cu
-OBJFILES=$(SRCFILES:.c=.o)
+OBJFILES=$(subst .cpp, .o, $(SRCFILES:.c=.o))
 gpuNUFFT_FILES=libgpuNUFFT_f.so libgpuNUFFT_ATM_f.so
 
 DOWNLOAD=$(shell which wget)
@@ -15,11 +19,11 @@ RM=$(shell which rm) -vf
 
 all: CFLAGS += -O3
 all: NVCCFLAGS += -Xlinker -s -Xcompiler -march=native #-restrict
-all: depend $(BINARY)
+all: $(BINARY)
 
 debug: CFLAGS += -g -DDEBUG
 debug: NVCCFLAGS += -G -lineinfo
-debug: depend $(BINARY)
+debug: $(BINARY)
 
 $(BINARY): gpuNUFFT $(OBJFILES)
 	$(CC) $(CFLAGS) $(NVCCFLAGS) $(OBJFILES) -o $@ $(LDFLAGS)
@@ -27,6 +31,11 @@ $(BINARY): gpuNUFFT $(OBJFILES)
 %.o: CC=g++
 #%.o: %.c
 #	$(CC) $(CFLAGS) -c $^ -o $@
+
+depend:
+	$(CC) $(CFLAGS) -M $(SRCDIR)/*.c $(SRCDIR)/*.cpp $(SRCDIR)/*.cu > .depend
+
+#-include .depend
 
 gpuNUFFT: extract
 	(test -z '' $(addprefix -a -f $(gpuNUFFT_DIR)/bin/, $(gpuNUFFT_FILES))) ||\
@@ -46,7 +55,7 @@ download:
 	test -d gpuNUFFT-2.0.6rc2 || test -f gpuNUFFT-2.0.6.zip || \
 		$(DOWNLOAD) 'http://cai2r.net/sites/default/files/software/gpuNUFFT-2.0.6.zip'
 
-.PHONY: clean distclean depend gpuNUFFT copy_files
+.PHONY: clean distclean depend gpuNUFFT extract download
 
 clean:
 	$(RM) *.o
@@ -60,5 +69,5 @@ distclean: clean
 
 vpath %.o $(SRCDIR)
 vpath %.c $(SRCDIR)
-vpath %.cu $(SRCDIR)
 vpath %.cpp $(SRCDIR)
+vpath %.cu $(SRCDIR)
