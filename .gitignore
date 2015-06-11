@@ -45,12 +45,11 @@ Temporary Items
 # Other
 .*.swp
 tests/liver_data/
-grasp
+src/grasp
 a.out
 cscope.*
 doc/
 gpuNUFFT-2.0.6rc2
-deviceQuery
 Matlab Code
 .nfs*
 *.o

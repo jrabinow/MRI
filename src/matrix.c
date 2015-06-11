@@ -8,7 +8,7 @@
  * manually with delete_matrix or delete_matrixC
  *
  * To copy metadata without changing data, use struct assignment:
- *   matrix * mat = new_matrix(dims, HOST, TYPE);
+ *   Matrix* mat = new_matrix(dims, HOST, TYPE);
  *   mat2 = mat;
  */
 
@@ -18,6 +18,7 @@
 Matrix* new_Matrix(size_t* dims, locationFlag location, varFlag vartype)
 {
 	Matrix* mat = NULL;
+	int i;
 #ifdef DEBUG
 	static unsigned mat_id = 0;
 	if(dims == NULL) {
@@ -33,7 +34,7 @@ Matrix* new_Matrix(size_t* dims, locationFlag location, varFlag vartype)
 
 	// compute number of entries
 	mat->num = 1;
-	for (int i = 0; i < MAX_DIMS; i++) {
+	for (i = 0; i < MAX_DIMS; i++) {
 		// compute num entries
 		mat->num *= mat->dims[i];
 	}
@@ -123,7 +124,7 @@ Matrix* copy(Matrix* in)
 // copy device matrix to host
 Matrix* toHost(Matrix* in)
 {
-	Matrix * out = NULL;
+	Matrix* out = NULL;
 #ifdef DEBUG
 	if(in == NULL) {
 		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
@@ -164,16 +165,17 @@ Matrix* crop_Matrix(Matrix* in, size_t* newDims)
 	bool onlyLastChanged = true;
 	Coordinate out_coord;
 	size_t in_idx;
+	size_t i;
 #ifdef DEBUG
 	if(in == NULL || newDims == NULL) {
 		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
 		exit(EXIT_FAILURE);
 	}
 #endif
-	Matrix * out = NULL;
+	Matrix* out = NULL;
 
 	// check to see if only the last dim is cropped
-	for (int i = 0; i < MAX_DIMS - 1; i++) {
+	for (i = 0; i < MAX_DIMS - 1; i++) {
 		if (in->dims[i] != newDims[i]) {
 			onlyLastChanged = false;
 			break;
@@ -184,7 +186,7 @@ Matrix* crop_Matrix(Matrix* in, size_t* newDims)
 	if (onlyLastChanged) {
 		out = in;
 		out->num = 1;
-		for (int i = 0; i < MAX_DIMS; i++) {
+		for (i = 0; i < MAX_DIMS; i++) {
 			out->dims[i] = newDims[i];
 			out->num *= out->dims[i];
 		}
@@ -202,7 +204,7 @@ Matrix* crop_Matrix(Matrix* in, size_t* newDims)
 		}
 
 		// loop over the beginnings of the columns of the output matrix
-		for (size_t i = 0; i < out->num; i += out->dims[0]) {
+		for (i = 0; i < out->num; i += out->dims[0]) {
 			// convert index relative to out matrix
 			// to index relative to input matrix
 			out_coord = I2C(i, out->dims);
@@ -244,7 +246,7 @@ void print_Matrix(Matrix* in, size_t start, size_t end)
 {
 	bool usingCopy = false;
 	Coordinate out_coord;
-	size_t firstCoord;
+	size_t firstCoord, i;
 #ifdef DEBUG
 	if(in == NULL) {
 		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
@@ -259,7 +261,7 @@ void print_Matrix(Matrix* in, size_t start, size_t end)
 
 	// print matrix entries
 	if(in->vartype == DOUBLE)
-		for (size_t i = start; i < end; i++) {
+		for (i = start; i < end; i++) {
 			// if entry is the start of a column, print header
 			out_coord = I2C(i, in->dims);
 			firstCoord = out_coord.coord[0];
@@ -270,7 +272,7 @@ void print_Matrix(Matrix* in, size_t start, size_t end)
 			printf("%f\n", in->ddata[i]);
 		}
 	else
-		for (size_t i = start; i < end; i++) {
+		for (i = start; i < end; i++) {
 			// if entry is the start of a column, print header
 			out_coord = I2C(i, in->dims);
 			firstCoord = out_coord.coord[0];

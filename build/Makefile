@@ -2,11 +2,11 @@ CC=nvcc
 gpuNUFFT_DIR=./gpuNUFFT-2.0.6rc2/CUDA
 BINARY=grasp
 SRCDIR=../src
-INCLUDES=$(SRCDIR)/includes $(gpuNUFFT_DIR)/inc /usr/local/pkg/cuda/6.5/include
+CFLAGS= -Iincludes -I$(gpuNUFFT_DIR)/inc
+LDFLAGS= -lcublas -lgpuNUFFT_f -lgpuNUFFT_ATM_f -L$(gpuNUFFT_DIR)/bin
 #VPATH=$(SRCDIR)
 
 CFLAGS=$(addprefix -I, $(INCLUDES))
-LDFLAGS=-lcublas -lgpuNUFFT_f -lgpuNUFFT_ATM_f -L$(gpuNUFFT_DIR)/bin
 
 SRCFILES=utils.c matrix.c grasp.cu
 OBJFILES=$(subst .cpp, .o, $(SRCFILES:.c=.o))
@@ -17,20 +17,14 @@ EXTRACT=$(shell which unzip) -ou
 CP=$(shell which cp) -f
 RM=$(shell which rm) -vf
 
-all: CFLAGS += -O3
-all: NVCCFLAGS += -Xlinker -s -Xcompiler -march=native #-restrict
-all: $(BINARY)
+all: CFLAGS += -O3 -Xlinker -s -Xcompiler -march=native
+all: depend $(BINARY)
 
-debug: CFLAGS += -g -DDEBUG
-debug: NVCCFLAGS += -G -lineinfo
-debug: $(BINARY)
+debug: CFLAGS += -DDEBUG -g -G -lineinfo
+debug: depend $(BINARY)
 
 $(BINARY): gpuNUFFT $(OBJFILES)
-	$(CC) $(CFLAGS) $(NVCCFLAGS) $(OBJFILES) -o $@ $(LDFLAGS)
-
-%.o: CC=g++
-#%.o: %.c
-#	$(CC) $(CFLAGS) -c $^ -o $@
+	$(CC) $(CFLAGS) $(OBJFILES) -o $@ $(LDFLAGS)
 
 depend:
 	$(CC) $(CFLAGS) -M $(SRCDIR)/*.c $(SRCDIR)/*.cpp $(SRCDIR)/*.cu > .depend
@@ -55,7 +49,14 @@ download:
 	test -d gpuNUFFT-2.0.6rc2 || test -f gpuNUFFT-2.0.6.zip || \
 		$(DOWNLOAD) 'http://cai2r.net/sites/default/files/software/gpuNUFFT-2.0.6.zip'
 
-.PHONY: clean distclean depend gpuNUFFT extract download
+.PHONY: clean distclean depend gpuNUFFT extract download cscope
+
+cscope:
+	find $(SRCDIR) /usr/local/pkg/cuda/6.5/include -type f \
+		-name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
+		-o -name '*.cu' > cscope.in
+	cscope -bi cscope.in
+	$(RM) cscope.in
 
 clean:
 	$(RM) *.o
@@ -63,9 +64,8 @@ clean:
 distclean: clean
 	$(RM) $(BINARY)
 	$(RM) $(addprefix "$(gpuNUFFT_DIR)/bin/", $(gpuNUFFT_FILES))
-	find ./gpuNUFFT-2.0.6rc2 -name CMakeCache.txt -delete 2>/dev/null
-	# the following command works correctly but prints error messages to stdout. We squash them
-	find ./gpuNUFFT-2.0.6rc2 -type d -name CMakeFiles -exec rm -r {} \; 2>/dev/null
+	find ./gpuNUFFT-2.0.6rc2 -name CMakeCache.txt -delete
+	find ./gpuNUFFT-2.0.6rc2 -type d -name CMakeFiles -exec rm -r {} \; -prune
 
 vpath %.o $(SRCDIR)
 vpath %.c $(SRCDIR)

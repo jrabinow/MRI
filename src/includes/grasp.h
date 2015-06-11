@@ -22,10 +22,11 @@
 #include <cuComplex.h>			// cuDoubleComplex type and operations
 
 /* Project headers */
-#include <matrix.h>			// host and device matrix metadata types
 #include <cudaErr.h>			// cuda and cublas error handlers
 #include <TVTemp.h>			// total variate temporal operator
 #include <multicoilGpuNUFFT.hpp>	// multicoil nonuniform FFT operator
+
+#include <matrix.h>			// host and device matrix metadata types
 #include <utils.h>			/* utility functions */
 
 /* CORRECT LINKING DEMO */
