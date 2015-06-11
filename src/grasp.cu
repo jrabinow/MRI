@@ -142,8 +142,8 @@ Matrix *load_matrix_from_file(const char *path, size_t *dims, varFlag vartype)
  * script "convertmat.c" using the matio library
  * and then directly written to files by fwrite)
  */
-void load_data(Matrix ** traj, Matrix ** sens, Matrix ** read, Matrix ** comp,
-		Param_type * param)
+void load_data(Matrix** traj, Matrix** sens, Matrix** read, Matrix** comp,
+		Param_type* param)
 {
 	// Input data size (based on the k space readings matrix)
 	// 1st dim: number of samples per reading per coil
@@ -316,7 +316,7 @@ int main(int argc, char **argv)
 }
 
 #if 0
-__global__ void elementWiseMultBySqrt(cuDoubleComplex * kdata, double * w) {
+__global__ void elementWiseMultBySqrt(cuDoubleComplex* kdata, double* w) {
     // We should only have to compute the squares of the elements of w
     // one time and use the result for all slices of kdata
     int i = threadIdx.x * blockIdx.x;
@@ -326,14 +326,14 @@ __global__ void elementWiseMultBySqrt(cuDoubleComplex * kdata, double * w) {
     kdata[j] = cuCmul(kdata[j], sqrtofelement); // WARNING
 }
 
-MatrixC * reindex(Matrix * in, ) {
+MatrixC* reindex(Matrix* in, ) {
 	// allocate Matrix with new dimensions
 	size_t new_dims[MAX_DIMS] = { };
-	Matrix * out = kjlk;
+	Matrix* out = kjlk;
 
 	// loop over indices of new Matrix,
 	// copying old data to new Matrix
-	size_t * new_coord;
+	size_t* new_coord;
 	size_t old_coord[MAX_DIMS];
 	for (size_t i = 0; i < out->num; i++) {
 		// convert new index to new coordinate
@@ -356,9 +356,9 @@ MatrixC * reindex(Matrix * in, ) {
 			param->num_spokes,
 			read->dims[2],
 			param->num_frames };
-	Matrix * read_ts = new_Matrix(read_ts_dims, host);
+	Matrix* read_ts = new_Matrix(read_ts_dims, host);
 	// loop over the first entries of the columns of read_ts
-	size_t * read_ts_coord;
+	size_t* read_ts_coord;
 	size_t read_coord[MAX_DIMS];
 	size_t read_idx;
 	for (size_t i = 0; i < read_ts->num; i += read_ts->dims[0]) {

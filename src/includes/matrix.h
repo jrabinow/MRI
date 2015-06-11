@@ -11,9 +11,13 @@
  *   Matrix* mat = new_matrix(dims, HOST, TYPE);
  *   mat2 = mat;
  */
-
 #ifndef MATRIX_H
 #define MATRIX_H
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -69,7 +73,8 @@ void print_Matrix(Matrix* in, size_t start, size_t end);
  */
 inline void processDims(size_t* newDims, size_t* oldDims)
 {
-	for (int i = 0; i < MAX_DIMS; i++) {
+	int i;
+	for (i = 0; i < MAX_DIMS; i++) {
 		newDims[i] = oldDims[i] + 1 - (oldDims[i] != 0);
 	}
 }
@@ -98,8 +103,9 @@ inline size_t C2I(size_t* coord, size_t* dims)
 {
 	size_t offset = 1;
 	size_t idx = 0;
+	int i;
 
-	for (int i = 0; i < MAX_DIMS; i++) {
+	for (i = 0; i < MAX_DIMS; i++) {
 		idx += coord[i] * offset;
 		offset *= dims[i];
 	}
@@ -120,19 +126,20 @@ inline Coordinate I2C(size_t idx, size_t* dims)
 {
 	size_t offset[MAX_DIMS];
 	Coordinate point;
+	int i;
 
 	// change 0's to 1's
 	processDims(dims, dims);
 
 	// compute offset multiplier when moving up the ith dimension
 	offset[0] = 1;
-	for (int i = 1; i < MAX_DIMS; i++) {
+	for (i = 1; i < MAX_DIMS; i++) {
 		offset[i] = dims[i-1] * offset[i-1];
 	}
 
 	// divide by offsets, largest first
 	// (it's kind of like positional notation)
-	for (int i = MAX_DIMS - 1; i >= 0; i--) {
+	for (i = MAX_DIMS - 1; i >= 0; i--) {
 		point.coord[i] = idx / offset[i];
 		idx = idx % offset[i];
 	}
@@ -140,4 +147,8 @@ inline Coordinate I2C(size_t idx, size_t* dims)
 	return point;
 }
 
+
+#ifdef __cplusplus
+}
+#endif
 #endif

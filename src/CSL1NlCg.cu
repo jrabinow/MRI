@@ -1,12 +1,12 @@
 /*
-__global__ void L1HelperKernel(cuDoubleComplex * in, double * out, double l1Smooth) {
+__global__ void L1HelperKernel(cuDoubleComplex* in, double* out, double l1Smooth) {
     // compute index based on block/grid size
     int i =
     out.d[i] = sqrt(cuCabs(in.d[i]) + l1Smooth);
 }
 
 // x and dx are 384x384x28 complex double matrices
-double objective(cuDoubleComplex * x, cuDoubleComplex * dx, double t) {
+double objective(cuDoubleComplex* x, cuDoubleComplex* dx, double t) {
     //function res = objective(x,dx,t,param) %**********************************
 
     // %%%%% L2-norm part
@@ -49,7 +49,7 @@ mat3DC grad(mat3DC x) {
     // L2-norm part
     // L2Grad =
     // ALLOCATE HERE
-    cuDoubleComplex * L2Grad = 2.*(param.E'*(param.E*x-param.y));
+    cuDoubleComplex* L2Grad = 2.*(param.E'*(param.E*x-param.y));
 
     // %%%%% L1-norm part
     if(param.lambda) { // DOES THIS WORK WITH FLOATS?

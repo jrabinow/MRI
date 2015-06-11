@@ -1,10 +1,15 @@
+#ifndef UTILS_H
+#define UTILS_H
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
 #include <stdarg.h>
 
-#ifndef UTILS_H
-#define UTILS_H
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 void *xmalloc(size_t size);
 void *xrealloc(void *ptr, size_t size);
@@ -27,4 +32,7 @@ void log_message(log_level_t level, const char *format, ... );
  * registered with atexit() will be called */
 void failwith(const char *errmsg);
 
+#ifdef __cplusplus
+}
+#endif
 #endif
