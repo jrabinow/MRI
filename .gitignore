@@ -49,9 +49,10 @@ a.out
 cscope.*
 doc/
 gpuNUFFT-2.0.6rc2
-Matlab Code
 .nfs*
 *.o
 Test Code
 build
 convert_dump
+liver_data.mat
+.svn
