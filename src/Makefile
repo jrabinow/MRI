@@ -1,7 +1,8 @@
 CC=nvcc
-gpuNUFFT_DIR=./gpuNUFFT-2.0.6rc2/CUDA
 SRCDIR=.
-CFLAGS= -Iincludes -I$(gpuNUFFT_DIR)/inc
+gpuNUFFT_DIR= $(SRCDIR)/gpuNUFFT-2.0.6rc2/CUDA
+INCLUDEDIR = $(SRCDIR)/includes $(gpuNUFFT_DIR)/inc
+CFLAGS= $(addprefix -I, $(INCLUDEDIR))
 LDFLAGS= -lcublas -lgpuNUFFT_f -lgpuNUFFT_ATM_f -L$(gpuNUFFT_DIR)/bin
 
 BINARY=grasp
@@ -13,15 +14,22 @@ DOWNLOAD=$(shell which wget)
 EXTRACT=$(shell which unzip) -ou
 CP=$(shell which cp) -f
 RM=$(shell which rm) -vf
+MV=$(shell which mv) -f
 
 all: CFLAGS += -O3 -Xlinker -s -Xcompiler -march=native
-all: depend $(BINARY)
+all: depend convert_dump $(BINARY)
 
 debug: CFLAGS += -DDEBUG -g -G -lineinfo
-debug: depend $(BINARY)
+debug: depend convert_dump $(BINARY)
 
 $(BINARY): gpuNUFFT $(OBJFILES)
 	$(CC) $(CFLAGS) $(OBJFILES) -o $@ $(LDFLAGS)
+
+convert_dump: CC=gcc
+convert_dump: CFLAGS = -I $(SRCDIR)/includes -I/usr/local/cuda/cuda/include
+convert_dump: LDFLAGS =
+convert_dump: convert_dump.o utils.o
+	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o convert_dump
 
 gpuNUFFT: extract
 	(test -z '' $(addprefix -a -f $(gpuNUFFT_DIR)/bin/, $(gpuNUFFT_FILES))) ||\
@@ -46,15 +54,15 @@ download:
 cscope:
 	find $(SRCDIR) /usr/local/pkg/cuda/6.5/include -type f \
 		-name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
-		-o -name '*.cu' > cscope.in
-	cscope -bi cscope.in
-	$(RM) cscope.in
+		-o -name '*.cu' > $(SRCDIR)/cscope.in
+	cscope -bi $(SRCDIR)/cscope.in
+	$(RM) $(SRCDIR)/cscope.in
 
 clean:
 	$(RM) *.o
 
 distclean: clean
-	$(RM) $(BINARY)
+	$(RM) $(BINARY) convertmat convert_dump
 	$(RM) $(addprefix "$(gpuNUFFT_DIR)/bin/", $(gpuNUFFT_FILES))
 	find ./gpuNUFFT-2.0.6rc2 -name CMakeCache.txt -delete
 	find ./gpuNUFFT-2.0.6rc2 -type d -name CMakeFiles -exec rm -r {} \; -prune

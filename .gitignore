@@ -44,7 +44,6 @@ Temporary Items
 
 # Other
 .*.swp
-tests/liver_data/
 src/grasp
 a.out
 cscope.*
@@ -55,3 +54,4 @@ Matlab Code
 *.o
 Test Code
 build
+convert_dump

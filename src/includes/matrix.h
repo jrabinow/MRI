@@ -56,8 +56,10 @@ void delete_Matrix(Matrix* in);
 Matrix* copy(Matrix* in);
 Matrix* toHost(Matrix* in);
 Matrix* toDevice(Matrix* in);
-Matrix * crop_Matrix(Matrix* in, size_t* newDims);
+Matrix* crop_Matrix(Matrix* in, size_t* newDims);
 void print_Matrix(Matrix* in, size_t start, size_t end);
+void print_Matrix_metadata(Matrix *m);
+void dump_Matrix(const char *path, Matrix* in);
 
 /* Inline functions go in header files */
 /*
@@ -78,7 +80,6 @@ inline void processDims(size_t* newDims, size_t* oldDims)
 		newDims[i] = oldDims[i] + 1 - (oldDims[i] != 0);
 	}
 }
-
 
 /*
  * Inline functions to convert between index and coordinate
@@ -146,7 +147,6 @@ inline Coordinate I2C(size_t idx, size_t* dims)
 
 	return point;
 }
-
 
 #ifdef __cplusplus
 }

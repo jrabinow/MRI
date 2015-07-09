@@ -39,6 +39,45 @@ void failwith(const char *errmsg)
 	exit(EXIT_FAILURE);
 }
 
+char *itoa(int n, char *buffer)
+{
+	char *ptr = buffer;
+	int log;
+
+	if(n < 0) {
+		*ptr++ = '-';
+		n = 0 - n;
+	}
+	for(log = n; log != 0; log /= 10)
+		ptr++;
+	for(*ptr = '\0'; n != 0; n /= 10)
+		*--ptr = n % 10 + '0';
+
+	return buffer;
+}
+
+char *const_append(const char *str1, const char *str2)
+{
+	char *new_str = (char*) NULL;
+	size_t len1, len2;
+
+	len1 = strlen(str1);
+	len2 = strlen(str2);
+#ifdef INTERNAL_ERROR_HANDLING
+	new_str = (char*) xmalloc(len1 + len2 + 1);
+#else
+	new_str = (char*) malloc(len1 + len2 + 1);
+	if(new_str != (char*) NULL) {
+#endif /* #ifdef INTERNAL_ERROR_HANDLING */
+		memcpy(new_str, str1, len1);
+		memcpy(new_str + len1, str2, len2 + 1);
+#ifndef INTERNAL_ERROR_HANDLING
+	}
+#endif /* #ifndef INTERNAL_ERROR_HANDLING */
+
+	return new_str;
+}
+
 static log_level_t __g_loglevel = LOG_DEBUG;
 static FILE *__g_loghandle = NULL;
 

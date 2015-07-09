@@ -127,10 +127,8 @@ Matrix *load_matrix_from_file(const char *path, size_t *dims, varFlag vartype)
 	Matrix *mat = new_Matrix(dims, HOST, vartype);
 
 	input = xfopen(path, "rb");
-	if(fread(mat->data, mat->size, mat->num, input) != mat->num) {
+	if(fread(mat->data, mat->size, mat->num, input) != mat->num)
 		failwith("Error: failed to read entire matrix from file");
-		exit(EXIT_FAILURE);
-	}
 	fclose(input);
 
 	return mat;
@@ -193,6 +191,7 @@ int main(int argc, char **argv)
 	init_log(stderr, LOG_FATAL);
 #endif
 	load_data(&traj, &sens, &read, &comp, &param);
+
 	normalize(sens);
 	apply_density_compensation(read, comp);
 
@@ -231,6 +230,7 @@ int main(int argc, char **argv)
 				oversample_ratio);
 	}
 
+	/*
 	// print matrices
 	printf("\n----K-space trajectories aka traj aka k----\n");
 	print_Matrix(traj, 0, 20);
@@ -241,6 +241,7 @@ int main(int argc, char **argv)
 	print_Matrix(read, 0, 20);
 	printf("\n----Density compensation aka comp aka w----\n");
 	print_Matrix(comp, 0, 20);
+	*/
 
 	// WORKING UP TO HERE
 

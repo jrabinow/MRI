@@ -41,13 +41,16 @@ Matrix* new_Matrix(size_t* dims, locationFlag location, varFlag vartype)
 
 	// set data size and location
 	mat->vartype = vartype;
-	if(vartype == DOUBLE) {
+	if(vartype == DOUBLE)
 		mat->size = sizeof(double);
-	} else {
+	else if(vartype == COMPLEX)
 		mat->size = sizeof(cuDoubleComplex);
+	else {
+		log_message(LOG_FATAL, "Unkown matrix type %d at %s:%s\n", vartype, __func__, __LINE__);
+		exit(EXIT_FAILURE);
 	}
-	mat->location = location;
 
+	mat->location = location;
 	// allocate data array
 	if (mat->location == HOST) {
 		mat->data = xmalloc(mat->num * mat->size);
@@ -55,7 +58,7 @@ Matrix* new_Matrix(size_t* dims, locationFlag location, varFlag vartype)
 		cudaErrChk(cudaMalloc((void**)&(mat->data),
 				mat->num*mat->size));
 	} else {
-		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		log_message(LOG_FATAL, "Unknown matrix location %d at %s:%s", location, __func__, __LINE__);
 		exit(EXIT_FAILURE);
 	}
 #ifdef DEBUG
@@ -86,7 +89,7 @@ void delete_Matrix(Matrix* in)
 #endif
 		cudaFree(in->data);
 	} else {
-		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		log_message(LOG_FATAL, "Unknown matrix location %d at %s:%s", in->location, __func__, __LINE__);
 		exit(EXIT_FAILURE);
 	}
 	// free metadata on host
@@ -115,7 +118,7 @@ Matrix* copy(Matrix* in)
 				in->num * in->size,
 				cudaMemcpyDeviceToDevice));
 	} else {
-		log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+		log_message(LOG_FATAL, "Unknown matrix location %d at %s:%s", in->location, __func__, __LINE__);
 		exit(EXIT_FAILURE);
 	}
 	return out;
@@ -175,7 +178,7 @@ Matrix* crop_Matrix(Matrix* in, size_t* newDims)
 	Matrix* out = NULL;
 
 	// check to see if only the last dim is cropped
-	for (i = 0; i < MAX_DIMS - 1; i++) {
+	for (i = 0; i < MAX_DIMS - 1 && in->dims[i] != 1; i++) {
 		if (in->dims[i] != newDims[i]) {
 			onlyLastChanged = false;
 			break;
@@ -194,14 +197,7 @@ Matrix* crop_Matrix(Matrix* in, size_t* newDims)
 	} else {
 		// otherwise, we have to actually rearrange the data
 		// create output matrix
-		if (in->location == HOST) {
-			out = new_Matrix(newDims, HOST, in->vartype);
-		} else if (in->location == DEVICE) {
-			out = new_Matrix(newDims, DEVICE, in->vartype);
-		} else {
-			log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
-			exit(EXIT_FAILURE);
-		}
+		out = new_Matrix(newDims, in->location, in->vartype);
 
 		// loop over the beginnings of the columns of the output matrix
 		for (i = 0; i < out->num; i += out->dims[0]) {
@@ -215,23 +211,32 @@ Matrix* crop_Matrix(Matrix* in, size_t* newDims)
 				if(in->vartype == DOUBLE)
 					memcpy(&(out->ddata[i]), &(in->ddata[in_idx]),
 							out->dims[0]*out->size);
-				else
+				else if(in->vartype == COMPLEX)
 					memcpy(&(out->cdata[i]), &(in->cdata[in_idx]),
 							out->dims[0]*out->size);
+				else {
+					log_message(LOG_FATAL, "Unkown matrix type %d at %s:%s\n", in->vartype, __func__, __LINE__);
+					exit(EXIT_FAILURE);
+				}
 			} else if (in->location == DEVICE) {
 				if(in->vartype == DOUBLE) {
 					cudaErrChk(cudaMemcpy(&(out->ddata[i]),
 						&(in->ddata[in_idx]),
 						out->dims[0],
 						cudaMemcpyDeviceToDevice));
-				} else {
+				} else if(in->vartype == COMPLEX) {
 					cudaErrChk(cudaMemcpy(&(out->cdata[i]),
 						&(in->cdata[in_idx]),
 						out->dims[0],
 						cudaMemcpyDeviceToDevice));
+					memcpy(&(out->cdata[i]), &(in->cdata[in_idx]),
+							out->dims[0]*out->size);
+				} else {
+					log_message(LOG_FATAL, "Unkown matrix type %d at %s:%s\n", in->vartype, __func__, __LINE__);
+					exit(EXIT_FAILURE);
 				}
 			} else {
-				log_message(LOG_FATAL, "Unknown matrix location %s:%s", __func__, __LINE__);
+				log_message(LOG_FATAL, "Unknown matrix location %d at %s:%s", in->location, __func__, __LINE__);
 				exit(EXIT_FAILURE);
 			}
 		}
@@ -271,7 +276,7 @@ void print_Matrix(Matrix* in, size_t start, size_t end)
 			// print entry
 			printf("%f\n", in->ddata[i]);
 		}
-	else
+	else if(in->vartype == COMPLEX)
 		for (i = start; i < end; i++) {
 			// if entry is the start of a column, print header
 			out_coord = I2C(i, in->dims);
@@ -282,6 +287,10 @@ void print_Matrix(Matrix* in, size_t start, size_t end)
 			// print entry
 			printf("%f + %fi\n", cuCreal(in->cdata[i]), cuCimag(in->cdata[i]));
 		}
+	else {
+		log_message(LOG_FATAL, "Unkown matrix type %d at %s:%s\n", in->vartype, __func__, __LINE__);
+		exit(EXIT_FAILURE);
+	}
 
 	// if we copied to host, free our copy
 	if (usingCopy) {
@@ -289,3 +298,69 @@ void print_Matrix(Matrix* in, size_t start, size_t end)
 	}
 }
 
+void dump_Matrix(const char *path, Matrix* in)
+{
+	bool usingCopy = false;
+	Coordinate out_coord;
+	size_t firstCoord, i;
+	FILE *dump_file = NULL;
+#ifdef DEBUG
+	if(in == NULL) {
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	dump_file = xfopen(path, "w");
+	// if matrix is on device, copy it to host
+	if (in->location == DEVICE) {
+		in = toHost(in);
+		usingCopy = true;
+	}
+
+	// print matrix entries
+	if(in->vartype == DOUBLE)
+		for (i = 0; i < in->num; i++)
+			fprintf(dump_file, "%f\n", in->ddata[i]);
+	else if(in->vartype == COMPLEX)
+		for (i = 0; i < in->num; i++)
+			fprintf(dump_file, "%f + %fi\n", (float) cuCreal(in->cdata[i]), (float) cuCimag(in->cdata[i]));
+	else {
+		log_message(LOG_FATAL, "Unkown matrix type %d at %s:%s\n", in->vartype, __func__, __LINE__);
+		exit(EXIT_FAILURE);
+	}
+
+	// if we copied to host, free our copy
+	if (usingCopy) {
+		delete_Matrix(in);
+	}
+	fclose(dump_file);
+}
+
+void print_Matrix_metadata(Matrix *m)
+{
+	char *str = NULL, buf[10];
+	int i;
+#ifdef DEBUG
+	if(m == NULL) {
+		log_message(LOG_FATAL, "NULL pointer passed in %s\n", __func__);
+		exit(EXIT_FAILURE);
+	}
+#endif
+	str = const_append("UNKNOWN TYPE ", itoa(m->vartype, buf));
+
+	printf("m->vartype: %s\n", m->vartype == DOUBLE ? "DOUBLE" : m->vartype == COMPLEX ? "COMPLEX" : str);
+	free(str);
+	str = const_append("UNKNOWN LOCATION ", itoa(m->location, buf));
+
+	printf("m->location: %s\n", m->location == DEVICE ? "DEVICE" : m->location == HOST ? "HOST" : str);
+	free(str);
+	printf("m->num: %zu\n", m->num);
+	printf("m->size: %zu\n", m->size);
+	printf("m->dims: {\n");
+	for(i = 0; i < MAX_DIMS; i++)
+		printf("\t%zu\n", m->dims[i]);
+	puts("}");
+#ifdef DEBUG
+	printf("m->mat_id: %u\n", m->mat_id);
+#endif
+}
